@@ -1,8 +1,10 @@
 import { createPinia, setActivePinia } from "pinia";
-import { mount } from "@vue/test-utils";
+import { enableAutoUnmount, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CanvasWorkspace from "./CanvasWorkspace.vue";
 import { usePackStore } from "../../stores/packState";
+
+enableAutoUnmount(afterEach);
 
 function createCanvasContext() {
   return {
@@ -190,5 +192,97 @@ describe("CanvasWorkspace", () => {
     await canvas.trigger("mousedown", { button: 0, clientX: 33, clientY: 1 });
     expect(store.activeColor).toBe("#ffffff");
     expect(store.categories[0].items[0].edited).toBe(false);
+  });
+
+  it("undoes and redoes an entire pencil stroke as one step", async () => {
+    const store = usePackStore();
+    const wrapper = mount(CanvasWorkspace, { global: { plugins: [pinia] } });
+    const canvas = wrapper.get("canvas");
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    await canvas.trigger("mousemove", { buttons: 1, clientX: 33, clientY: 1 });
+    await canvas.trigger("mousemove", { buttons: 1, clientX: 65, clientY: 1 });
+    await canvas.trigger("mouseup");
+    expect(store.historyStack).toHaveLength(1);
+    const renders = vi.mocked(context.clearRect).mock.calls.length;
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true }));
+    await wrapper.vm.$nextTick();
+    expect(store.layers[0].data[0].slice(0, 3)).toEqual([null, null, null]);
+    expect(vi.mocked(context.clearRect).mock.calls.length).toBeGreaterThan(renders);
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "y", ctrlKey: true }));
+    await wrapper.vm.$nextTick();
+    expect(store.layers[0].data[0].slice(0, 3)).toEqual(Array(3).fill("#ffffff"));
+  });
+
+  it("captures one fill per click, not per mouse movement", async () => {
+    const store = usePackStore();
+    store.activeTool = "bucket";
+    const wrapper = mount(CanvasWorkspace, { global: { plugins: [pinia] } });
+    const canvas = wrapper.get("canvas");
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    store.activeColor = "#123456";
+    await canvas.trigger("mousemove", { buttons: 1, clientX: 33, clientY: 1 });
+    expect(store.layers[0].data[0][1]).toBe("#ffffff");
+    expect(store.historyStack).toHaveLength(1);
+    store.undo();
+    expect(store.layers[0].data.flat().every((color) => color === null)).toBe(true);
+    store.redo();
+    expect(store.layers[0].data.flat().every((color) => color === "#ffffff")).toBe(true);
+  });
+
+  it("records eraser strokes but not picking, no-op or out-of-bounds clicks", async () => {
+    const store = usePackStore();
+    store.layers[0].data[0][0] = "#ffffff";
+    const wrapper = mount(CanvasWorkspace, { global: { plugins: [pinia] } });
+    const canvas = wrapper.get("canvas");
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    store.activeTool = "eyedropper";
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    store.activeTool = "eraser";
+    await canvas.trigger("mousedown", { button: 0, clientX: -1, clientY: 1 });
+    expect(store.historyStack).toHaveLength(0);
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    await canvas.trigger("mouseup");
+    expect(store.layers[0].data[0][0]).toBeNull();
+    expect(store.historyStack).toHaveLength(1);
+    store.undo();
+    expect(store.layers[0].data[0][0]).toBe("#ffffff");
+  });
+
+  it.each(["mouseup", "blur"])("ends a stroke on window %s", async (eventName) => {
+    const store = usePackStore();
+    const wrapper = mount(CanvasWorkspace, { global: { plugins: [pinia] } });
+    const canvas = wrapper.get("canvas");
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    window.dispatchEvent(new Event(eventName));
+    await canvas.trigger("mousemove", { buttons: 1, clientX: 33, clientY: 1 });
+    expect(store.layers[0].data[0][1]).toBeNull();
+    await canvas.trigger("mousedown", { button: 0, clientX: 33, clientY: 1 });
+    expect(store.historyStack).toHaveLength(2);
+  });
+
+  it("supports Ctrl+Shift+Z and does not intercept typing or unmodified keys", async () => {
+    const store = usePackStore();
+    const wrapper = mount(CanvasWorkspace, { global: { plugins: [pinia] } });
+    await wrapper.get("canvas").trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "z" }));
+    expect(store.historyStack).toHaveLength(1);
+    const input = document.createElement("input");
+    document.body.append(input);
+    try {
+      const event = new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, cancelable: true });
+      input.dispatchEvent(event);
+      expect(event.defaultPrevented).toBe(false);
+      expect(store.historyStack).toHaveLength(1);
+    } finally {
+      input.remove();
+    }
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true }));
+    const redo = new KeyboardEvent("keydown", { key: "Z", ctrlKey: true, shiftKey: true, cancelable: true });
+    window.dispatchEvent(redo);
+    expect(redo.defaultPrevented).toBe(true);
+    expect(store.layers[0].data[0][0]).toBe("#ffffff");
+    wrapper.unmount();
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "z", ctrlKey: true }));
+    expect(store.layers[0].data[0][0]).toBe("#ffffff");
   });
 });

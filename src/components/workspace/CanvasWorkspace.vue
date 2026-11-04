@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import {
   renderCanvas,
   type EngineState,
@@ -11,6 +11,7 @@ const uiScale = 32;
 const packStore = usePackStore();
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const isDrawing = ref(false);
+let strokeHasSnapshot = false;
 
 const engineState = computed<EngineState>(() => ({
   width: 16,
@@ -80,6 +81,11 @@ function paintPixel(event: MouseEvent) {
     return;
   }
 
+  if (packStore.activeTool === "bucket" || !strokeHasSnapshot) {
+    packStore.saveHistorySnapshot();
+    strokeHasSnapshot = true;
+  }
+
   if (packStore.activeTool === "bucket") {
     applyFloodFill(layer.data, x, y, packStore.activeColor);
   } else {
@@ -89,7 +95,6 @@ function paintPixel(event: MouseEvent) {
   if (packStore.activeItemId) {
     packStore.markItemEdited(packStore.activeItemId);
   }
-
 }
 
 function startDrawing(event: MouseEvent) {
@@ -97,7 +102,8 @@ function startDrawing(event: MouseEvent) {
     return;
   }
 
-  isDrawing.value = true;
+  stopDrawing();
+  isDrawing.value = packStore.activeTool === "pencil" || packStore.activeTool === "eraser";
   paintPixel(event);
 }
 
@@ -114,6 +120,31 @@ function continueDrawing(event: MouseEvent) {
 
 function stopDrawing() {
   isDrawing.value = false;
+  strokeHasSnapshot = false;
+}
+
+function handleHistoryShortcut(event: KeyboardEvent) {
+  if (!(event.ctrlKey || event.metaKey) || event.altKey) {
+    return;
+  }
+  const target = event.target;
+  if (target instanceof HTMLElement &&
+    target.closest("input, textarea, select, [contenteditable]:not([contenteditable='false'])")) {
+    return;
+  }
+
+  const key = event.key.toLowerCase();
+  if (key !== "z" && key !== "y") {
+    return;
+  }
+
+  event.preventDefault();
+  stopDrawing();
+  if (key === "y" || event.shiftKey) {
+    packStore.redo();
+  } else {
+    packStore.undo();
+  }
 }
 
 onMounted(() => {
@@ -130,7 +161,18 @@ onMounted(() => {
   }
 
   redraw();
+  window.addEventListener("keydown", handleHistoryShortcut);
+  window.addEventListener("mouseup", stopDrawing);
+  window.addEventListener("blur", stopDrawing);
 });
+
+onUnmounted(() => {
+  window.removeEventListener("keydown", handleHistoryShortcut);
+  window.removeEventListener("mouseup", stopDrawing);
+  window.removeEventListener("blur", stopDrawing);
+});
+
+watch(() => [packStore.activeTool, packStore.activeLayerIndex], stopDrawing, { flush: "sync" });
 
 watch(() => packStore.layers, () => {
   if (canvasContext) {

@@ -122,4 +122,88 @@ describe("usePackStore", () => {
 
     expect(store.activeItemId).toBe("");
   });
+
+  it("restores serialized layers through undo and redo without shared references", () => {
+    const store = usePackStore();
+    expect(store.historyStack).toEqual([]);
+    expect(store.redoStack).toEqual([]);
+    const originalLayers = store.layers;
+    store.saveHistorySnapshot();
+    store.layers[0].data[0][0] = "#123456";
+    store.saveHistorySnapshot();
+    store.layers[0].data[0][1] = "#abcdef";
+
+    store.undo();
+    expect(store.layers[0].data[0]).toEqual(["#123456", ...Array(15).fill(null)]);
+    store.undo();
+    expect(store.layers[0].data[0][0]).toBeNull();
+    expect(store.layers).not.toBe(originalLayers);
+    expect(originalLayers[0].data[0][1]).toBe("#abcdef");
+    store.redo();
+    expect(store.layers[0].data[0][0]).toBe("#123456");
+    expect(store.layers[0].data[0][1]).toBeNull();
+    store.redo();
+    expect(store.layers[0].data[0][1]).toBe("#abcdef");
+    expect(store.redoStack).toEqual([]);
+  });
+
+  it("clears redo when a new edit begins after undo", () => {
+    const store = usePackStore();
+    store.saveHistorySnapshot();
+    store.layers[0].data[0][0] = "#123456";
+    store.undo();
+    expect(store.redoStack).toHaveLength(1);
+    store.saveHistorySnapshot();
+    store.layers[0].data[0][0] = "#abcdef";
+    store.redo();
+    expect(store.redoStack).toEqual([]);
+    expect(store.layers[0].data[0][0]).toBe("#abcdef");
+  });
+
+  it("keeps exactly the 30 most recent steps through undo and redo", () => {
+    const store = usePackStore();
+    for (let step = 0; step < 35; step += 1) {
+      store.saveHistorySnapshot();
+      store.layers[0].name = `Step ${step + 1}`;
+    }
+    expect(store.historyStack).toHaveLength(30);
+    for (let step = 0; step < 30; step += 1) {
+      store.undo();
+    }
+    expect(store.layers[0].name).toBe("Step 5");
+    expect(store.redoStack).toHaveLength(30);
+    store.undo();
+    expect(store.layers[0].name).toBe("Step 5");
+    for (let step = 0; step < 30; step += 1) {
+      store.redo();
+    }
+    expect(store.layers[0].name).toBe("Step 35");
+    expect(store.historyStack).toHaveLength(30);
+    store.redo();
+    expect(store.layers[0].name).toBe("Step 35");
+  });
+
+  it("does nothing when history is empty", () => {
+    const store = usePackStore();
+    const layers = store.layers;
+    store.undo();
+    store.redo();
+    expect(store.layers).toBe(layers);
+    expect(store.historyStack).toEqual([]);
+    expect(store.redoStack).toEqual([]);
+  });
+
+  it("restores visibility and keeps the selected layer index in bounds", () => {
+    const store = usePackStore();
+    store.saveHistorySnapshot();
+    store.addLayer();
+    store.layers[0].visible = false;
+    store.undo();
+    expect(store.layers).toHaveLength(1);
+    expect(store.activeLayerIndex).toBe(0);
+    expect(store.layers[0].visible).toBe(true);
+    store.redo();
+    expect(store.layers).toHaveLength(2);
+    expect(store.layers[0].visible).toBe(false);
+  });
 });

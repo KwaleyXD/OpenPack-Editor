@@ -3,6 +3,8 @@ import { sortTextures } from "../logic/textureSorter";
 import { initGrid, type Layer } from "../engine/canvasEngine";
 import type { DrawingTool } from "../logic/toolLogic";
 
+const HISTORY_LIMIT = 30;
+
 export interface TextureItem {
   id: string;
   name: string;
@@ -41,6 +43,8 @@ export const usePackStore = defineStore("pack", {
     layers: [
       { id: "layer-0", name: "Layer 1", visible: true, data: initGrid(16) },
     ] as Layer[],
+    historyStack: [] as string[],
+    redoStack: [] as string[],
   }),
 
   getters: {
@@ -70,6 +74,47 @@ export const usePackStore = defineStore("pack", {
   },
 
   actions: {
+    // Capture before mutation: the current state becomes the redo target on undo.
+    saveHistorySnapshot() {
+      this.historyStack.push(JSON.stringify(this.layers));
+      this.redoStack = [];
+      if (this.historyStack.length > HISTORY_LIMIT) {
+        this.historyStack.shift();
+      }
+    },
+
+    undo() {
+      const snapshot = this.historyStack.at(-1);
+      if (snapshot === undefined) {
+        return;
+      }
+
+      const layers: Layer[] = JSON.parse(snapshot);
+      this.redoStack.push(JSON.stringify(this.layers));
+      if (this.redoStack.length > HISTORY_LIMIT) {
+        this.redoStack.shift();
+      }
+      this.historyStack.pop();
+      this.layers = layers;
+      this.activeLayerIndex = Math.max(0, Math.min(this.activeLayerIndex, layers.length - 1));
+    },
+
+    redo() {
+      const snapshot = this.redoStack.at(-1);
+      if (snapshot === undefined) {
+        return;
+      }
+
+      const layers: Layer[] = JSON.parse(snapshot);
+      this.historyStack.push(JSON.stringify(this.layers));
+      if (this.historyStack.length > HISTORY_LIMIT) {
+        this.historyStack.shift();
+      }
+      this.redoStack.pop();
+      this.layers = layers;
+      this.activeLayerIndex = Math.max(0, Math.min(this.activeLayerIndex, layers.length - 1));
+    },
+
     addLayer() {
       this.layers.push({
         id: crypto.randomUUID(),
