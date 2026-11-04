@@ -9,16 +9,16 @@ describe("AppLayout", () => {
     expect(wrapper.get("header").text()).toContain(
       "Resource pack project name",
     );
-    expect(wrapper.get('aside[aria-label="Primary navigation"]').exists()).toBe(
+    expect(
+      wrapper.find('aside[aria-label="Primary navigation"]').exists(),
+    ).toBe(true);
+    expect(wrapper.find('aside[aria-label="Asset explorer"]').exists()).toBe(
       true,
     );
-    expect(wrapper.get('aside[aria-label="Asset explorer"]').exists()).toBe(
+    expect(wrapper.find('main[aria-label="Canvas workspace"]').exists()).toBe(
       true,
     );
-    expect(wrapper.get('main[aria-label="Canvas workspace"]').exists()).toBe(
-      true,
-    );
-    expect(wrapper.get('aside[aria-label="Tools and layers"]').exists()).toBe(
+    expect(wrapper.find('aside[aria-label="Tools and layers"]').exists()).toBe(
       true,
     );
   });
