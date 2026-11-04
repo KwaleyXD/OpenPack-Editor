@@ -46,7 +46,7 @@ describe("usePackStore", () => {
       },
       {
         id: "wood-logs",
-        name: "Wood Logs",
+        name: "Wood & Logs",
         items: [
           {
             id: "assets/block/oak_log.png",
