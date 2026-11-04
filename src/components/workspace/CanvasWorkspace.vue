@@ -1,29 +1,22 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import {
-  initGrid,
   renderCanvas,
   type EngineState,
 } from "../../engine/canvasEngine";
 import { usePackStore } from "../../stores/packState";
+import { applyFloodFill, applyPencil, pickColor } from "../../logic/toolLogic";
 
 const uiScale = 32;
 const packStore = usePackStore();
 const canvasRef = ref<HTMLCanvasElement | null>(null);
 const isDrawing = ref(false);
 
-const engineState = reactive<EngineState>({
+const engineState = computed<EngineState>(() => ({
   width: 16,
   height: 16,
-  layers: [
-    {
-      id: "layer-0",
-      name: "Layer 1",
-      visible: true,
-      data: initGrid(16),
-    },
-  ],
-});
+  layers: packStore.layers,
+}));
 
 let canvasContext: CanvasRenderingContext2D | null = null;
 
@@ -32,7 +25,7 @@ function redraw() {
     throw new Error("Canvas 2D context is not initialized.");
   }
 
-  renderCanvas(canvasContext, engineState, uiScale);
+  renderCanvas(canvasContext, engineState.value, uiScale);
 }
 
 function getGridCoordinates(
@@ -48,7 +41,7 @@ function getGridCoordinates(
   const x = Math.floor((event.clientX - bounds.left) / uiScale);
   const y = Math.floor((event.clientY - bounds.top) / uiScale);
 
-  if (x < 0 || y < 0 || x >= engineState.width || y >= engineState.height) {
+  if (x < 0 || y < 0 || x >= engineState.value.width || y >= engineState.value.height) {
     return null;
   }
 
@@ -62,20 +55,41 @@ function paintPixel(event: MouseEvent) {
     return;
   }
 
-  const layer = engineState.layers[packStore.activeLayerIndex];
-  const row = layer?.data[coordinates.y];
+  const layer = packStore.layers[packStore.activeLayerIndex];
 
-  if (!layer || !layer.visible || !row) {
+  if (!layer) {
+    throw new RangeError("The active layer does not exist.");
+  }
+
+  if (!layer.visible) {
     return;
   }
 
-  row[coordinates.x] = packStore.activeColor;
+  const { x, y } = coordinates;
+  const currentColor = pickColor(layer.data, x, y);
+
+  if (packStore.activeTool === "eyedropper") {
+    if (currentColor !== null) {
+      packStore.activeColor = currentColor;
+    }
+    return;
+  }
+
+  const color = packStore.activeTool === "eraser" ? null : packStore.activeColor;
+  if (currentColor === color) {
+    return;
+  }
+
+  if (packStore.activeTool === "bucket") {
+    applyFloodFill(layer.data, x, y, packStore.activeColor);
+  } else {
+    applyPencil(layer.data, x, y, color);
+  }
 
   if (packStore.activeItemId) {
     packStore.markItemEdited(packStore.activeItemId);
   }
 
-  redraw();
 }
 
 function startDrawing(event: MouseEvent) {
@@ -88,7 +102,12 @@ function startDrawing(event: MouseEvent) {
 }
 
 function continueDrawing(event: MouseEvent) {
-  if (isDrawing.value) {
+  if ((event.buttons & 1) === 0) {
+    stopDrawing();
+    return;
+  }
+  if (isDrawing.value &&
+    (packStore.activeTool === "pencil" || packStore.activeTool === "eraser")) {
     paintPixel(event);
   }
 }
@@ -112,6 +131,12 @@ onMounted(() => {
 
   redraw();
 });
+
+watch(() => packStore.layers, () => {
+  if (canvasContext) {
+    redraw();
+  }
+}, { deep: true });
 </script>
 
 <template>

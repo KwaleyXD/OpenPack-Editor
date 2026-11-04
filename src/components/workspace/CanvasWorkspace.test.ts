@@ -91,6 +91,7 @@ describe("CanvasWorkspace", () => {
       clientY: 1,
     });
     await canvas.trigger("mousemove", {
+      buttons: 1,
       clientX: 32 + 1,
       clientY: 1,
     });
@@ -143,5 +144,51 @@ describe("CanvasWorkspace", () => {
     });
 
     expect(store.categories[0]?.items[0]?.edited).toBe(true);
+  });
+
+  it("uses the selected tool on the shared active layer", async () => {
+    const store = usePackStore();
+    store.addLayer();
+    store.activeColor = "#123456";
+    const wrapper = mount(CanvasWorkspace, { global: { plugins: [pinia] } });
+    const canvas = wrapper.get("canvas");
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    expect(store.layers[1].data[0][0]).toBe("#123456");
+    expect(store.layers[0].data[0][0]).toBeNull();
+    store.activeTool = "eraser";
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    expect(store.layers[1].data[0][0]).toBeNull();
+    store.activeTool = "bucket";
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    expect(store.layers[1].data.flat().every((color) => color === "#123456")).toBe(true);
+    store.activeColor = "#ffffff";
+    store.activeTool = "eyedropper";
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    expect(store.activeColor).toBe("#123456");
+  });
+
+  it("redraws visibility changes and does not paint a hidden layer", async () => {
+    const store = usePackStore();
+    const wrapper = mount(CanvasWorkspace, { global: { plugins: [pinia] } });
+    store.layers[0].visible = false;
+    await wrapper.vm.$nextTick();
+    expect(context.clearRect).toHaveBeenCalledTimes(2);
+    await wrapper.get("canvas").trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    expect(store.layers[0].data[0][0]).toBeNull();
+  });
+
+  it("does not mark textures edited when picking color or painting the same color", async () => {
+    const store = usePackStore();
+    store.loadTextures(["stone.png"]);
+    store.selectItem("stone.png");
+    store.layers[0].data[0][0] = store.activeColor;
+    const wrapper = mount(CanvasWorkspace, { global: { plugins: [pinia] } });
+    const canvas = wrapper.get("canvas");
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    store.activeTool = "eyedropper";
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    await canvas.trigger("mousedown", { button: 0, clientX: 33, clientY: 1 });
+    expect(store.activeColor).toBe("#ffffff");
+    expect(store.categories[0].items[0].edited).toBe(false);
   });
 });

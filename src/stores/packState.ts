@@ -1,5 +1,7 @@
 import { defineStore } from "pinia";
 import { sortTextures } from "../logic/textureSorter";
+import { initGrid, type Layer } from "../engine/canvasEngine";
+import type { DrawingTool } from "../logic/toolLogic";
 
 export interface TextureItem {
   id: string;
@@ -35,6 +37,10 @@ export const usePackStore = defineStore("pack", {
     activeItemId: "",
     activeColor: "#ffffff",
     activeLayerIndex: 0,
+    activeTool: "pencil" as DrawingTool,
+    layers: [
+      { id: "layer-0", name: "Layer 1", visible: true, data: initGrid(16) },
+    ] as Layer[],
   }),
 
   getters: {
@@ -64,6 +70,16 @@ export const usePackStore = defineStore("pack", {
   },
 
   actions: {
+    addLayer() {
+      this.layers.push({
+        id: crypto.randomUUID(),
+        name: `Layer ${this.layers.length + 1}`,
+        visible: true,
+        data: initGrid(16),
+      });
+      this.activeLayerIndex = this.layers.length - 1;
+    },
+
     loadTextures(filePaths: readonly string[]) {
       this.categories = sortTextures(filePaths).map(({ category, files }) => ({
         id: getCategoryId(category),
