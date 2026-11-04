@@ -1,14 +1,16 @@
 import JSZip from "jszip";
 import type { EngineState, Layer } from "./canvasEngine";
+import { getTexturePath } from "../logic/texturePaths";
 
 export interface EditedTexture extends EngineState {
   /** Minecraft filename stem, not the file-path IDs used by the asset store. */
   id: string;
-  categoryPath: "item" | "block" | "item/" | "block/";
+  categoryPath: string;
+  metadata?: string;
 }
 
 /** Format 34 is a legacy default; supply the format required by the target game version. */
-export function generateMcMeta(packName: string, packFormat = 34): string {
+export function generateMcMeta(packName: string, packFormat = 34, description = packName): string {
   if (!packName.trim()) {
     throw new Error("Pack name must not be empty.");
   }
@@ -19,7 +21,7 @@ export function generateMcMeta(packName: string, packFormat = 34): string {
   return JSON.stringify({
     pack: {
       pack_format: packFormat,
-      description: packName,
+      description,
     },
   }, null, 2);
 }
@@ -86,17 +88,19 @@ export async function buildPackZip(
   packName: string,
   editedItems: readonly EditedTexture[],
   packFormat = 34,
+  packDescription = packName,
 ): Promise<Blob> {
   const zip = new JSZip();
-  zip.file("pack.mcmeta", generateMcMeta(packName, packFormat));
+  zip.file("pack.mcmeta", generateMcMeta(packName, packFormat, packDescription));
 
   const paths = new Set<string>();
   const entries = editedItems.map((item) => {
-    if (!/^[a-z0-9_]+$/.test(item.id) ||
-      !/^(?:item|block)\/?$/.test(item.categoryPath)) {
-      throw new Error("Texture exports require a filename stem and an item or block category.");
+    if (!/^[a-z0-9_-][a-z0-9_.-]*$/.test(item.id) || item.id.endsWith(".png")) {
+      throw new Error("Texture exports require a valid filename stem.");
     }
     const categoryPath = item.categoryPath.replace(/\/$/, "");
+    getTexturePath(`${categoryPath}/${item.id}.png`);
+    if (item.metadata !== undefined) JSON.parse(item.metadata);
     const path = `assets/minecraft/textures/${categoryPath}/${item.id}.png`;
     if (paths.has(path)) {
       throw new Error(`Duplicate texture export path: ${path}`);
@@ -108,6 +112,7 @@ export async function buildPackZip(
   for (const { item, path } of entries) {
     const png = await exportCanvasToBlob(item.layers, item.width, item.height);
     zip.file(path, await png.arrayBuffer());
+    if (item.metadata !== undefined) zip.file(`${path}.mcmeta`, item.metadata);
   }
 
   const blob = await zip.generateAsync({ type: "blob" });

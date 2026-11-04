@@ -54,7 +54,7 @@ describe("AppLayout", () => {
 
     expect(wrapper.get("header").classes()).toContain("col-span-4");
     expect(wrapper.get("div").classes()).toContain(
-      "grid-cols-[3.5rem_9.5rem_minmax(0,1fr)_9.5rem]",
+      "grid-cols-[4rem_9.5rem_minmax(0,1fr)_9.5rem]",
     );
   });
 });

@@ -1,11 +1,21 @@
 {
   "name": "openpack-editor",
+  "productName": "OpenPack Studio",
+  "version": "0.1.0",
+  "description": "Minecraft resource pack editor",
+  "author": "KwaleyXD",
   "private": true,
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "vue-tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit",
+    "desktop": "npm run build && electron .",
+    "dist:win": "npm run build && electron-builder --win portable --publish never"
   },
   "dependencies": {
     "jszip": "^3.10.1",
@@ -16,10 +26,37 @@
     "@types/node": "^22.20.5",
     "@vitejs/plugin-vue": "^6.0.10",
     "@vue/test-utils": "^2.5.1",
+    "autoprefixer": "^10.4.20",
+    "electron": "^45.2.2",
+    "electron-builder": "^26.18.0",
     "jsdom": "^29.1.1",
+    "postcss": "^8.5.6",
+    "tailwindcss": "^3.4.17",
     "typescript": "^5.9.3",
     "vite": "^8.3.5",
     "vitest": "^5.1.0",
     "vue-tsc": "^3.3.14"
+  },
+  "build": {
+    "appId": "io.github.kwaleyxd.openpack",
+    "productName": "OpenPack Studio",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "package.json",
+      "!node_modules/**/*"
+    ],
+    "asar": true,
+    "win": {
+      "target": [
+        "portable"
+      ]
+    },
+    "portable": {
+      "artifactName": "OpenPack-Studio-${version}-portable.exe"
+    }
   }
 }

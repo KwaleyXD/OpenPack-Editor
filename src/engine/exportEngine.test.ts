@@ -1,5 +1,7 @@
 import { Blob as NodeBlob } from "node:buffer";
 import JSZip from "jszip";
+import { createPinia, getActivePinia } from "pinia";
+import { usePackStore } from "../stores/packState";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initGrid, type Layer } from "./canvasEngine";
 import {
@@ -8,6 +10,10 @@ import {
   generateMcMeta,
   type EditedTexture,
 } from "./exportEngine";
+
+vi.mock("./imageLoader", () => ({
+  parsePngToGrid: vi.fn(async (_url: string, size: number) => initGrid(size)),
+}));
 
 const pngBytes = Uint8Array.from(
   atob("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg=="),
@@ -58,6 +64,7 @@ describe("PNG and ZIP export", () => {
   const revokeObjectURL = vi.fn();
 
   beforeEach(() => {
+    localStorage.clear();
     vi.useFakeTimers({ toFake: ["setTimeout"] });
     vi.stubGlobal("Blob", NodeBlob);
     createObjectURL.mockClear();
@@ -90,6 +97,11 @@ describe("PNG and ZIP export", () => {
   });
 
   afterEach(() => {
+    const pinia = getActivePinia();
+    if (pinia) {
+      usePackStore(pinia).$dispose();
+    }
+    localStorage.clear();
     vi.runAllTimers();
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -192,6 +204,52 @@ describe("PNG and ZIP export", () => {
   it("allows metadata-only packs and sanitizes download filenames", async () => {
     await buildPackZip("My/Pack:Test", []);
     expect(anchors[0].download).toBe("My_Pack_Test.zip");
+  });
+
+  it("exports nested entity, GUI, and animated texture paths with exact metadata sidecars", async () => {
+    const metadata = '{"animation":{"frametime":2,"interpolate":true}}';
+    const blob = await buildPackZip("Pack", [
+      createItem({ categoryPath: "entity/creeper", id: "creeper" }),
+      createItem({ categoryPath: "gui/sprites/container", id: "slot" }),
+      createItem({ categoryPath: "block", id: "lava_still", metadata }),
+    ]);
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    expect(zip.file("assets/minecraft/textures/entity/creeper/creeper.png")).not.toBeNull();
+    expect(zip.file("assets/minecraft/textures/gui/sprites/container/slot.png")).not.toBeNull();
+    expect(await zip.file("assets/minecraft/textures/block/lava_still.png.mcmeta")!.async("string")).toBe(metadata);
+  });
+
+  it.each(["../entity", "entity/../../evil", "/entity", "entity//creeper", "entity/."])(
+    "rejects unsafe export folder %s before starting a download",
+    async (categoryPath) => {
+      await expect(buildPackZip("Pack", [createItem({ categoryPath })])).rejects.toThrow("Cannot determine");
+      expect(createObjectURL).not.toHaveBeenCalled();
+    },
+  );
+
+  it("exports distinct cached and live textures at their own sizes", async () => {
+    const store = usePackStore(createPinia());
+    store.loadTextures(["assets/minecraft/textures/block/stone.png", "assets/minecraft/textures/item/diamond_sword.png"]);
+    await store.selectItem("assets/minecraft/textures/block/stone.png");
+    store.layers[0].data[0][0] = "#123456";
+    store.resizeCanvas(32);
+    await store.selectItem("assets/minecraft/textures/item/diamond_sword.png");
+    store.layers[0].data[1][1] = "#abcdef";
+    store.markItemEdited(store.activeItemId);
+    const blob = await buildPackZip(store.packName, store.getEditedItems(), 34, store.packDescription);
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    expect(zip.file("assets/minecraft/textures/block/stone.png")).not.toBeNull();
+    expect(zip.file("assets/minecraft/textures/item/diamond_sword.png")).not.toBeNull();
+    expect(canvases.map((canvas) => canvas.width)).toEqual([32, 16]);
+    expect(draws).toEqual([
+      { color: "#123456", rect: [0, 0, 1, 1] },
+      { color: "#123456", rect: [1, 0, 1, 1] },
+      { color: "#123456", rect: [0, 1, 1, 1] },
+      { color: "#123456", rect: [1, 1, 1, 1] },
+      { color: "#abcdef", rect: [1, 1, 1, 1] },
+    ]);
+    expect(JSON.parse(await zip.file("pack.mcmeta")!.async("string")).pack.description)
+      .toBe("Made in OpenPack Editor");
   });
 
   it.each(["../stone", "stone.png", "assets/minecraft/stone", "Stone"])(

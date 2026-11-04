@@ -16,11 +16,25 @@ function toggleCategory(categoryId: string) {
 
   expandedCategoryIds.value = expandedIds;
 }
+
+async function selectTexture(itemId: string) {
+  try {
+    await packStore.selectItem(itemId);
+  } catch {
+    // The store exposes the load failure in the alert below.
+  }
+}
 </script>
 
 <template>
   <section class="flex h-full min-h-0 flex-col text-zinc-100">
     <h2 class="sr-only">Texture assets</h2>
+    <p v-if="packStore.pendingItemId" role="status" class="p-2 text-xs text-zinc-400">
+      Loading texture...
+    </p>
+    <p v-if="packStore.selectionError" role="alert" class="break-words p-2 text-xs text-red-400">
+      {{ packStore.selectionError }}
+    </p>
 
     <div
       v-if="packStore.categories.length === 0"
@@ -95,7 +109,8 @@ function toggleCategory(categoryId: string) {
               packStore.activeItemId === item.id ? 'true' : undefined
             "
             :title="item.filePath"
-            @click="packStore.selectItem(item.id)"
+            :aria-busy="packStore.pendingItemId === item.id"
+            @click="selectTexture(item.id)"
           >
             <span
               aria-hidden="true"

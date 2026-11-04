@@ -147,8 +147,12 @@ export function sortTextures(assetPaths: readonly string[]): TextureGroup[] {
 
   for (const assetPath of assetPaths) {
     const filename = getFilename(assetPath);
+    const folders = assetPath.replace(/\\/g, "/").replace(/^assets\/minecraft\/textures\//, "").split("/");
+    const folder = folders.length > 1 ? folders[0] : "";
     const rule = categoryRules.find(({ matches }) => matches(filename));
-    const category = rule?.category ?? "Other";
+    const category = folder && folder !== "item" && folder !== "block" && folder !== "assets"
+      ? `${folder === "gui" ? "GUI" : folder.split("_").map((part) => part[0].toUpperCase() + part.slice(1)).join(" ")} Textures`
+      : rule?.category ?? "Other";
     const files = grouped.get(category) ?? [];
 
     files.push(assetPath);

@@ -1,15 +1,27 @@
 import { createPinia, setActivePinia } from "pinia";
-import { mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it } from "vitest";
+import { flushPromises, mount } from "@vue/test-utils";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AssetExplorer from "./AssetExplorer.vue";
 import { usePackStore } from "../../stores/packState";
+import { initGrid } from "../../engine/canvasEngine";
+import { parsePngToGrid } from "../../engine/imageLoader";
+
+vi.mock("../../engine/imageLoader", () => ({ parsePngToGrid: vi.fn() }));
 
 describe("AssetExplorer", () => {
   let pinia: ReturnType<typeof createPinia>;
 
   beforeEach(() => {
+    localStorage.clear();
     pinia = createPinia();
     setActivePinia(pinia);
+    vi.mocked(parsePngToGrid).mockReset();
+    vi.mocked(parsePngToGrid).mockImplementation(async (_url, size) => initGrid(size));
+  });
+
+  afterEach(() => {
+    usePackStore(pinia).$dispose();
+    localStorage.clear();
   });
 
   it("shows an empty state when no textures are loaded", () => {
@@ -58,6 +70,7 @@ describe("AssetExplorer", () => {
     const itemButton = wrapper.get(`button[title="${itemId}"]`);
 
     await itemButton.trigger("click");
+    await flushPromises();
 
     expect(store.activeItemId).toBe(itemId);
     expect(itemButton.attributes("aria-current")).toBe("true");
@@ -96,5 +109,28 @@ describe("AssetExplorer", () => {
 
     expect(progressBarStyle).toContain("width: 50%");
     expect(progressBarStyle).toContain("rgb(249, 115, 22)");
+  });
+
+  it("shows loading state and handles failed image loads with a retry", async () => {
+    const store = usePackStore();
+    store.loadTextures(["block/stone.png"]);
+    let rejectLoad!: (error: Error) => void;
+    vi.mocked(parsePngToGrid).mockImplementationOnce(() => new Promise((_resolve, reject) => {
+      rejectLoad = reject;
+    }));
+    const wrapper = mount(AssetExplorer, { global: { plugins: [pinia] } });
+    await wrapper.get('button[aria-expanded]').trigger("click");
+    const item = wrapper.get('button[title="block/stone.png"]');
+    await item.trigger("click");
+    expect(wrapper.get('[role="status"]').text()).toContain("Loading");
+    expect(item.attributes("aria-busy")).toBe("true");
+    rejectLoad(new Error("PNG is missing"));
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toBe("PNG is missing");
+    expect(store.activeItemId).toBe("");
+    await item.trigger("click");
+    await flushPromises();
+    expect(store.activeItemId).toBe("block/stone.png");
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
   });
 });
