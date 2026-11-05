@@ -55,10 +55,28 @@ public/vanilla_base/
 The same structure also contains `entity/`, `gui/`, and other original folders.
 These paths resolve as `/vanilla_base/item/diamond_sword.png`, for example.
 The generated manifest records native width/height, so non-square textures and
-larger images are not resampled to 16x16. Animated PNG strips open as full
-sprite sheets, not animation playback; their original `.png.mcmeta` is retained
-when the edited sheet is exported. Changing sheet dimensions may require
-adjusting animation metadata externally.
+larger images are not resampled to 16x16.
+
+Sorting searches the whole filename, case-insensitively. Logs and crimson/warped
+stems go to **Wood & Logs**; shelf, candle, coral, plank, end, spear, and trim
+names have dedicated categories. Rails go to **Redstone Components**, eggs to
+**Spawn Eggs & Eggs**, and amethyst to **Ores**. Unspecialized diamond, iron,
+copper, gold, coal, emerald, redstone, lapis (or lapiz) names also go to **Ores**;
+tools, armor, food, and other specific categories take precedence over this
+material fallback. Trims are separate from armor. Existing local saves are
+regrouped automatically without discarding edited textures.
+
+Textures with `.png.mcmeta` animation data appear as one expandable asset.
+Click **+** beside the texture to see its frames, then select a frame to edit it.
+The list follows the metadata's playback order (including repeats) and shows
+each frame's duration in game ticks. Tall textures without animation metadata
+remain ordinary images. Frame selection does not add undo steps.
+
+Frame edits, layers, undo/redo, and autosave retain the full original sprite
+sheet. Exports contain one sheet plus its animation metadata, preserving frame
+order, timing, interpolation, and other metadata. Resizing uses frame dimensions
+and resizes every physical cell together; exported frame dimensions are updated
+automatically. Frames are selectable for editing, not played automatically.
 
 To reimport a supplied template, run:
 
@@ -81,12 +99,32 @@ compatibility with Minecraft 26.3. The export engine accepts a format override.
 
 ## Drawing and colors
 
+The asset explorer shows lazy-loaded texture thumbnails, with live composites
+for active and previously edited textures. Drag the dividers beside the canvas
+to resize either sidebar. The left action bar starts at 64 pixels wide and has
+its own divider between the action buttons and asset explorer; drag it to set
+a width from 56 to 240 pixels (limited by available window space). All sidebar
+widths are saved locally. Preview and layer-list
+heights also have draggable dividers. Focus a divider and use arrow keys
+(Shift for larger steps), Home, or End to resize with the keyboard.
+
+The supplied program logo is used in the header, browser tab, desktop window,
+and Windows executable.
+
 Scroll over the workspace to zoom, centered on the cursor, with no zoom-out
 floor (zooming in is capped at 1600%). Trackpad pinch is supported too.
 Hold **Space and drag** or use a
 **middle-button drag** to pan. Corner buttons show the zoom and reset the view.
 Navigation never changes pixels or history. The canvas and minimap use an
 alpha checkerboard that is not baked into PNG exports.
+The **Grid** button toggles subtle dark pixel outlines without changing texture
+pixels. Outlines disappear below four screen pixels per cell, and never appear
+in previews or exports.
+Fast pencil, eraser, and dither strokes connect successive input positions so
+quick drags do not leave holes. Redraw requests are batched to animation frames;
+pan/zoom updates do not retraverse the reactive layer data.
+Live previews share a single pixel-change notification, and brush movement
+does not repeatedly traverse the full asset library for autosave.
 The pixel under the cursor is highlighted with a lighter overlay; it does not
 modify the texture or appear in exports.
 The sidebar preview fills the available width while preserving aspect ratio
@@ -117,10 +155,19 @@ for solid rectangles/ellipses and **Mirror left/right** or **Mirror top/bottom**
 for symmetry. Dither marks are mirrored as a unit, so reflected marks may land
 on the opposite checkerboard parity.
 
+All visible layers are composited normally; onion skin no longer ghosts layers.
+For animated textures, **Onion skin** controls neighboring playback frames:
+**0** off, **1** previous, **2** previous and next, **3** next. Neighbors are
+translucent overlays in the workspace only, never in previews or exports.
+The first frame has no previous neighbor and the last has no next neighbor
+(no wrapping). Non-animated textures have no onion-skin overlays.
+
 Choose Earth & stone, Wool & concrete, or Ore highlights palettes. The recent
 color bar keeps ten unique colors for this session. Hex input accepts six RGB
 or eight RGBA digits, with or without `#`; RGBA inputs use integer bytes
 from 0 to 255. The native RGB picker preserves the existing alpha channel.
+Custom picker adjustments are added to recent colors only when the selection
+is confirmed, so dragging through shades does not replace the recent-color row.
 Fully opaque colors use a canonical six-digit form in recent-color history.
 
 To save a custom palette, choose your colors, enter a name, and click

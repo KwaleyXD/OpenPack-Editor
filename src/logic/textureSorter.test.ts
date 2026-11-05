@@ -22,13 +22,19 @@ const categoryExamples: ReadonlyArray<{
     ],
   },
   {
-    category: "Armor & Trims",
+    category: "Armor",
     filenames: [
       "diamond_helmet", "chainmail_chestplate", "netherite_leggings",
-      "leather_boots", "sentry_armor_trim_smithing_template",
-      "netherite_upgrade_smithing_template", "coast_trim",
+      "leather_boots", "netherite_upgrade_smithing_template",
     ],
   },
+  { category: "Trims", filenames: ["sentry_armor_trim_smithing_template", "coast_trim"] },
+  { category: "Shelf", filenames: ["bookshelf", "shelf_mushroom", "oak_shelf_top"] },
+  { category: "Candle", filenames: ["candle", "red_candle_lit", "cake_with_candle"] },
+  { category: "Coral", filenames: ["tube_coral", "dead_fire_coral_block", "coral_fan_top"] },
+  { category: "Planks", filenames: ["oak_planks", "plank_top", "custom_plank_side"] },
+  { category: "End Stuff", filenames: ["end_stone", "end_crystal", "ender_pearl", "custom_end_top"] },
+  { category: "Spear", filenames: ["diamond_spear", "iron_spear_pulling_0", "spear_handle"] },
   {
     category: "Earth & Soil",
     filenames: [
@@ -47,7 +53,8 @@ const categoryExamples: ReadonlyArray<{
     category: "Wood & Logs",
     filenames: [
       "oak_log", "cherry_log", "mangrove_log", "poplar_log", "crimson_stem",
-      "oak_wood", "warped_hyphae", "stripped_poplar_log_top",
+      "oak_wood", "warped_hyphae", "stripped_poplar_log_top", "campfire_log_lit",
+      "warped_stem_top", "crimson_stem_side", "custom_log_side",
     ],
   },
   {
@@ -57,17 +64,19 @@ const categoryExamples: ReadonlyArray<{
     ],
   },
   {
-    category: "Ores & Raw Metals",
+    category: "Ores",
     filenames: [
       "iron_ore", "deepslate_diamond_ore", "redstone_ore", "nether_quartz_ore",
-      "copper_ore", "raw_iron", "raw_copper_block",
+      "copper_ore", "raw_iron", "raw_copper_block", "amethyst_shard",
+      "amethyst_cluster", "diamond", "iron_ingot", "copper_ingot", "iron_nugget",
+      "emerald", "coal", "lapis_lazuli", "lapiz_block", "raw_iron_ore",
     ],
   },
   {
     category: "Plants & Fungi",
     filenames: [
       "chorus_flower", "red_mushroom", "tallgrass", "deadbush", "poplar_sapling",
-      "fern", "big_dripleaf_top", "red_shrub", "shelf_mushroom", "chorus_plant",
+      "fern", "big_dripleaf_top", "red_shrub", "chorus_plant",
       "cactus_side",
     ],
   },
@@ -83,7 +92,7 @@ const categoryExamples: ReadonlyArray<{
     filenames: [
       "netherrack", "soul_sand", "warped_nylium", "glowstone", "magma",
       "quartz_block_top", "basalt", "blackstone", "ancient_debris_side",
-      "end_stone", "purpur_block", "shroomlight",
+      "purpur_block", "shroomlight",
     ],
   },
   {
@@ -102,7 +111,7 @@ const categoryExamples: ReadonlyArray<{
   },
   { category: "Glass", filenames: ["glass", "red_stained_glass", "glass_pane_top"] },
   {
-    category: "Copper & Metal Blocks",
+    category: "Ores",
     filenames: [
       "oxidized_copper", "iron_block", "gold_block", "emerald_block",
       "diamond_block", "netherite_block",
@@ -118,7 +127,7 @@ const categoryExamples: ReadonlyArray<{
       "redstone_dust", "piston_top", "dispenser_front", "dropper_front",
       "observer_top", "hopper", "repeater", "comparator", "daylight_detector_top",
       "lever", "stone_button", "oak_pressure_plate", "tripwire_hook",
-      "tnt_side", "sculk",
+      "tnt_side", "sculk", "rail", "powered_rail_on", "detector_rail",
     ],
   },
   {
@@ -136,7 +145,7 @@ const categoryExamples: ReadonlyArray<{
     filenames: [
       "red_bed", "cushion", "white_wool", "blue_carpet", "chest", "barrel",
       "shulker_box", "oak_sign", "banner", "painting", "item_frame",
-      "flower_pot", "armor_stand", "lantern", "campfire", "chain", "bookshelf",
+      "flower_pot", "armor_stand", "lantern", "campfire", "chain",
     ],
   },
   {
@@ -154,10 +163,9 @@ const categoryExamples: ReadonlyArray<{
   {
     category: "Materials & Drops",
     filenames: [
-      "red_dye", "copper_ingot", "netherite_ingot", "iron_nugget", "diamond",
-      "emerald", "coal", "stick", "string", "feather", "gunpowder", "flint",
-      "leather", "brick", "paper", "book", "slime_ball", "egg", "ghast_tear",
-      "blaze_rod", "blaze_powder", "magma_cream", "amethyst_shard", "end_crystal",
+      "red_dye", "netherite_ingot", "stick", "string", "feather", "gunpowder", "flint",
+      "leather", "brick", "paper", "book", "slime_ball", "ghast_tear",
+      "blaze_rod", "blaze_powder", "magma_cream",
     ],
   },
   {
@@ -167,7 +175,7 @@ const categoryExamples: ReadonlyArray<{
       "enchanted_book", "knowledge_book",
     ],
   },
-  { category: "Spawn Eggs", filenames: ["chicken_spawn_egg", "rabbit_spawn_egg"] },
+  { category: "Spawn Eggs & Eggs", filenames: ["chicken_spawn_egg", "rabbit_spawn_egg", "egg", "turtle_egg", "dragon_egg"] },
 ];
 
 describe("sortTextures", () => {
@@ -237,10 +245,22 @@ describe("sortTextures", () => {
     expect(sortTextures(files)).toEqual([{ category: "Other", files }]);
   });
 
-  it("requires exact names for misc tools", () => {
+  it("finds identifiers in the middle of misc tool filenames", () => {
     expect(sortTextures(["custom_compass.png"])).toEqual([
-      { category: "Other", files: ["custom_compass.png"] },
+      { category: "Misc Tools", files: ["custom_compass.png"] },
     ]);
+  });
+
+  it.each([
+    ["entity/custom_log_side.png", "Wood & Logs"],
+    ["block/custom_diamond_sword_handle.png", "Swords"],
+    ["block/raw_copper_door_top.png", "Doors, Trapdoors & Fences"],
+    ["item/golden_apple.png", "Food & Consumables"],
+    ["item/netherite_leggings.png", "Armor"],
+    ["trims/items/diamond.png", "Trims"],
+    ["item/prefix_spear_suffix.png", "Spear"],
+  ])("prioritizes specific names over fallback ores and folder categories: %s", (path, category) => {
+    expect(sortTextures([path])).toEqual([{ category, files: [path] }]);
   });
 
   it("gives the crop rule precedence for the shared melon keyword", () => {

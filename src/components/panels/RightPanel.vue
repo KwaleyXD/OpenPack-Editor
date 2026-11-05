@@ -5,9 +5,12 @@ import type { DrawingTool } from "../../logic/toolLogic";
 import ColorPickerPanel from "./ColorPickerPanel.vue";
 import TexturePreview from "./TexturePreview.vue";
 import ModalDialog from "../modals/ModalDialog.vue";
+import PanelResizer from "../layout/PanelResizer.vue";
 
 const store = usePackStore();
 const previewExpanded = ref(false);
+const previewHeight = ref(200);
+const layersHeight = ref(160);
 
 const tools: ReadonlyArray<{ id: DrawingTool; name: string; path: string }> = [
   { id: "pencil", name: "Pencil", path: "m3 17 1 4 4-1L20 8l-4-4Z M14 6l4 4" },
@@ -31,12 +34,15 @@ const tools: ReadonlyArray<{ id: DrawingTool; name: string; path: string }> = [
       <h2 class="text-xs font-semibold">Preview</h2>
       <button
         type="button" aria-label="Expand texture preview" :aria-expanded="previewExpanded"
-        class="w-full cursor-zoom-in rounded focus-visible:outline focus-visible:outline-sky-400"
+        class="flex w-full cursor-zoom-in items-center justify-center overflow-hidden rounded focus-visible:outline focus-visible:outline-sky-400 [&>canvas]:!max-h-full [&>canvas]:!max-w-full [&>canvas]:!w-auto"
+        :style="{ height: `${previewHeight}px` }"
         @click="previewExpanded = true"
       >
         <TexturePreview />
       </button>
-      <p class="text-[10px] text-zinc-400">{{ store.width }} x {{ store.height }} - Click to expand</p>
+      <PanelResizer v-model="previewHeight" :min="64" :max="480" label="Resize preview height" horizontal />
+      <p class="text-[10px] text-zinc-400">{{ store.frameWidth }} x {{ store.frameHeight }} - Click to expand</p>
+      <p v-if="store.activeAnimation" class="text-[10px] text-zinc-400">Frame {{ store.activeFrameIndex + 1 }} / {{ store.activeAnimation.frames.length }}</p>
     </section>
     <section aria-label="Drawing tools">
       <h2 class="mb-2 text-xs font-semibold">Tools</h2>
@@ -69,7 +75,7 @@ const tools: ReadonlyArray<{ id: DrawingTool; name: string; path: string }> = [
         <h2 class="text-xs font-semibold">Layers</h2>
         <button type="button" aria-label="Add layer" class="rounded px-2 hover:bg-zinc-700" @click="store.addLayer()">+</button>
       </div>
-      <ul class="space-y-1">
+      <ul class="space-y-1 overflow-y-auto" :style="{ height: `${layersHeight}px` }">
         <li
           v-for="(layer, index) in store.layers"
           :key="layer.id"
@@ -126,16 +132,18 @@ const tools: ReadonlyArray<{ id: DrawingTool; name: string; path: string }> = [
           </div>
         </li>
       </ul>
+      <PanelResizer v-model="layersHeight" :min="64" :max="480" label="Resize layers height" horizontal />
       <label class="mt-3 block text-xs">
-        Onion skin range: {{ store.onionSkinRange }}
+        Onion skin: {{ ['Off', 'Previous frame', 'Previous and next frames', 'Next frame'][store.onionSkinRange] }}
         <input v-model.number="store.onionSkinRange" aria-label="Onion skin range" type="range" min="0" max="3" step="1" class="mt-1 w-full" />
       </label>
+      <p class="mt-1 text-[10px] text-zinc-400">1: previous; 2: both; 3: next. Animation frames only; previews and exports stay clean.</p>
     </section>
 
     <ColorPickerPanel />
     <ModalDialog v-if="previewExpanded" title="Texture preview" wide @close="previewExpanded = false">
       <TexturePreview expanded />
-      <p class="mt-3 text-center text-xs text-zinc-400">{{ store.width }} x {{ store.height }} pixels</p>
+      <p class="mt-3 text-center text-xs text-zinc-400">{{ store.frameWidth }} x {{ store.frameHeight }} pixels</p>
     </ModalDialog>
   </div>
 </template>

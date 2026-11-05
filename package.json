@@ -51,6 +51,7 @@
     ],
     "asar": true,
     "win": {
+      "icon": "public/logo.png",
       "target": [
         "portable"
       ]

@@ -73,13 +73,23 @@ export function applyLine(
 ): void {
   assertCoordinates(layerData, x0, y0);
   assertCoordinates(layerData, x1, y1);
+  forEachLinePoint(x0, y0, x1, y1, (x, y) => applyPencil(layerData, x, y, color, symmetry));
+}
+
+export function forEachLinePoint(
+  x0: number, y0: number, x1: number, y1: number,
+  visit: (x: number, y: number) => void,
+): void {
+  if (![x0, y0, x1, y1].every(Number.isSafeInteger)) {
+    throw new RangeError("Line endpoints must be integer pixel coordinates.");
+  }
   const dx = Math.abs(x1 - x0);
   const dy = -Math.abs(y1 - y0);
   const sx = x0 < x1 ? 1 : -1;
   const sy = y0 < y1 ? 1 : -1;
   let error = dx + dy;
   while (true) {
-    applyPencil(layerData, x0, y0, color, symmetry);
+    visit(x0, y0);
     if (x0 === x1 && y0 === y1) break;
     const doubledError = 2 * error;
     if (doubledError >= dy) {

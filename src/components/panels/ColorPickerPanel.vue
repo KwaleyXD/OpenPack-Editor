@@ -94,7 +94,7 @@ function savePalette() {
     </div>
     <label class="flex items-center justify-between gap-1 text-xs">
       Custom color
-      <input :value="store.activeColor.slice(0, 7)" type="color" class="h-7 w-10 cursor-pointer bg-transparent" @input="setNativeColor" @change="setNativeColor" />
+      <input :value="store.activeColor.slice(0, 7)" type="color" class="h-7 w-10 cursor-pointer bg-transparent" @change="setNativeColor" />
     </label>
     <label class="block text-xs">
       Hex (RGB / RGBA)

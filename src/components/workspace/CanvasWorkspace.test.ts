@@ -4,6 +4,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CanvasWorkspace from "./CanvasWorkspace.vue";
 import { usePackStore } from "../../stores/packState";
 import { initGrid } from "../../engine/canvasEngine";
+import { watch } from "vue";
+import { parseProject } from "../../stores/projectPersistence";
 
 vi.mock("../../engine/imageLoader", () => ({
   parsePngToGrid: vi.fn(async (_url: string, size: number) => initGrid(size)),
@@ -45,6 +47,85 @@ describe("CanvasWorkspace", () => {
     usePackStore(pinia).$dispose();
     localStorage.clear();
     vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  it("invalidates once per fast stroke event without deep grid notifications and still autosaves", async () => {
+    vi.useFakeTimers();
+    const store = usePackStore();
+    const deepChange = vi.fn();
+    const stop = watch(() => store.layers, deepChange, { deep: true });
+    const wrapper = mount(CanvasWorkspace);
+    const canvas = wrapper.get("canvas");
+    const revision = store.renderRevision;
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    await canvas.trigger("mousemove", { buttons: 1, clientX: 321, clientY: 1 });
+    await canvas.trigger("mouseup");
+    expect(store.renderRevision).toBe(revision + 2);
+    expect(deepChange).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1100);
+    const saved = localStorage.getItem("openpack_save");
+    expect(saved).not.toBeNull();
+    expect(parseProject(saved!).layers[0].data[0].slice(0, 11)).toEqual(Array(11).fill("#ffffff"));
+    stop();
+  });
+
+  it.each(["pencil", "eraser", "dither"] as const)("connects fast %s strokes and keeps one undo step", async (tool) => {
+    const store = usePackStore();
+    store.activeTool = tool;
+    if (tool === "eraser") store.layers[0].data[0].fill("#ffffff");
+    const before = JSON.stringify(store.layers);
+    const wrapper = mount(CanvasWorkspace);
+    const canvas = wrapper.get("canvas");
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    await canvas.trigger("mousemove", { buttons: 1, clientX: 321, clientY: 1 });
+    await canvas.trigger("mouseup");
+    expect(store.layers[0].data[0].slice(0, 11)).toEqual(Array.from({ length: 11 }, (_, x) =>
+      tool === "eraser" || (tool === "dither" && x % 2) ? null : "#ffffff"));
+    expect(store.historyStack).toHaveLength(1);
+    store.undo();
+    expect(JSON.stringify(store.layers)).toBe(before);
+  });
+
+  it("interpolates diagonal right-drag erasing with symmetry", async () => {
+    const store = usePackStore();
+    store.layers[0].data.forEach(row => row.fill("#ffffff"));
+    store.symmetryHorizontal = true;
+    const wrapper = mount(CanvasWorkspace);
+    await wrapper.get("canvas").trigger("mousedown", { button: 2, clientX: 1, clientY: 1 });
+    await wrapper.get("canvas").trigger("mousemove", { buttons: 2, clientX: 129, clientY: 129 });
+    await wrapper.get("canvas").trigger("mouseup");
+    for (let i = 0; i < 5; i++) {
+      expect(store.layers[0].data[i][i]).toBeNull();
+      expect(store.layers[0].data[i][15 - i]).toBeNull();
+    }
+    expect(store.historyStack).toHaveLength(1);
+  });
+
+  it("does not connect separate strokes or repaint when only hovering", async () => {
+    const wrapper = mount(CanvasWorkspace);
+    const canvas = wrapper.get("canvas");
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    await canvas.trigger("mouseleave");
+    const calls = vi.mocked(context.clearRect).mock.calls.length;
+    await canvas.trigger("mousemove", { buttons: 0, clientX: 129, clientY: 1 });
+    expect(context.clearRect).toHaveBeenCalledTimes(calls);
+    await canvas.trigger("mousedown", { button: 0, clientX: 129, clientY: 1 });
+    expect(usePackStore().layers[0].data[0].slice(0, 5)).toEqual(["#ffffff", null, null, null, "#ffffff"]);
+  });
+
+  it("toggles pixel outlines without modifying pixels or history", async () => {
+    const wrapper = mount(CanvasWorkspace);
+    const store = usePackStore();
+    const before = JSON.stringify(store.layers);
+    vi.mocked(context.clearRect).mockClear();
+    vi.mocked(context.strokeRect).mockClear();
+    await wrapper.get('[aria-label="Pixel grid"]').trigger("click");
+    expect(wrapper.get('[aria-label="Pixel grid"]').attributes("aria-pressed")).toBe("false");
+    expect(context.clearRect).toHaveBeenCalledOnce();
+    expect(context.strokeRect).not.toHaveBeenCalled();
+    expect(JSON.stringify(store.layers)).toBe(before);
+    expect(store.historyStack).toHaveLength(0);
   });
 
   it("mounts a 512px canvas and renders its initial 16 by 16 grid", () => {
@@ -58,6 +139,7 @@ describe("CanvasWorkspace", () => {
     expect(context.clearRect).toHaveBeenCalledWith(0, 0, 512, 512);
     expect(context.fillRect).not.toHaveBeenCalled();
     expect(context.strokeRect).toHaveBeenCalledTimes(16 * 16);
+    expect(context.clearRect).toHaveBeenCalledOnce();
   });
 
     it.each(["line", "rectangle", "circle"] as const)(
@@ -367,7 +449,7 @@ describe("CanvasWorkspace", () => {
     store.layers[0].data[0][0] = "#123456";
     store.addLayer();
     const wrapper = mount(CanvasWorkspace, { global: { plugins: [pinia] } });
-    expect(context.fillRect).not.toHaveBeenCalled();
+    expect(context.fillRect).toHaveBeenCalledWith(0, 0, 32, 32);
     store.onionSkinRange = 1;
     await wrapper.vm.$nextTick();
     expect(context.fillRect).toHaveBeenCalledWith(0, 0, 32, 32);

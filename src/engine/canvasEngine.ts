@@ -66,7 +66,7 @@ export function renderCanvas(
   activeLayerIndex: number,
   onionSkinRange: number,
   view?: CanvasView,
-  options: { showGrid?: boolean } = {},
+  options: { showGrid?: boolean; onionFrames?: Layer[][] } = {},
 ): void {
   if (!Number.isFinite(uiScale) || uiScale <= 0) {
     throw new RangeError("UI scale must be a positive finite number.");
@@ -82,23 +82,45 @@ export function renderCanvas(
   const transform = view
     ? getCanvasTransform(state.width, state.height, context.canvas.width, context.canvas.height, uiScale, view)
     : { x: 0, y: 0, scale: uiScale };
-  const left = (x: number) => view ? Math.round(transform.x + x * transform.scale) : x * uiScale;
-  const top = (y: number) => view ? Math.round(transform.y + y * transform.scale) : y * uiScale;
+  const left = (x: number) => Math.round(transform.x + x * transform.scale);
+  const top = (y: number) => Math.round(transform.y + y * transform.scale);
   const firstX = view ? Math.max(0, Math.floor(-transform.x / transform.scale)) : 0;
   const firstY = view ? Math.max(0, Math.floor(-transform.y / transform.scale)) : 0;
   const lastX = view ? Math.min(state.width, Math.ceil((context.canvas.width - transform.x) / transform.scale)) : state.width;
   const lastY = view ? Math.min(state.height, Math.ceil((context.canvas.height - transform.y) / transform.scale)) : state.height;
+  const minified = transform.scale < 1;
+  const sampleLeft = Math.max(0, left(0)), sampleTop = Math.max(0, top(0));
+  const sampleRight = Math.min(context.canvas.width, left(state.width));
+  const sampleBottom = Math.min(context.canvas.height, top(state.height));
   context.imageSmoothingEnabled = false;
   context.clearRect(0, 0, context.canvas.width, context.canvas.height);
   context.globalAlpha = 1;
 
-  for (const [index, layer] of state.layers.entries()) {
-    const distance = Math.abs(activeLayerIndex - index);
-    if (!layer.visible || distance > onionSkinRange) {
+  const passes = [
+    ...state.layers.map((layer) => ({ layer, opacity: 1 })),
+    ...(options.onionFrames ?? []).flatMap((layers) => layers.map((layer) => ({ layer, opacity: 0.3 }))),
+  ];
+  for (const { layer, opacity } of passes) {
+    if (!layer.visible) {
       continue;
     }
 
-    context.globalAlpha = 1 / Math.pow(2, distance);
+    context.globalAlpha = opacity;
+    if (minified) {
+      // Sample destination pixel centers; tiny thumbnails should not paint every source cell.
+      for (let y = sampleTop; y < sampleBottom; y += 1) {
+        const sourceY = Math.max(0, Math.min(state.height - 1, Math.floor((y + 0.5 - transform.y) / transform.scale)));
+        for (let x = sampleLeft; x < sampleRight; x += 1) {
+          const sourceX = Math.max(0, Math.min(state.width - 1, Math.floor((x + 0.5 - transform.x) / transform.scale)));
+          const color = layer.data[sourceY]?.[sourceX];
+          if (color !== null && color !== undefined) {
+            context.fillStyle = color;
+            context.fillRect(x, y, 1, 1);
+          }
+        }
+      }
+      continue;
+    }
     for (let y = firstY; y < lastY; y += 1) {
       for (let x = firstX; x < lastX; x += 1) {
         const color = layer.data[y]?.[x];
@@ -112,7 +134,8 @@ export function renderCanvas(
     context.globalAlpha = 1;
   }
 
-  if (options.showGrid === false || (view && transform.scale < 4)) return;
+  context.globalAlpha = 1;
+  if (options.showGrid === false || transform.scale < 4) return;
   context.save();
   context.strokeStyle = "rgba(0, 0, 0, 0.18)";
   context.lineWidth = 1;

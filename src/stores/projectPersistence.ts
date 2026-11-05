@@ -1,5 +1,7 @@
 import type { Layer } from "../engine/canvasEngine";
 import type { TextureCategory } from "./packState";
+import { getTextureAnimation } from "../logic/assetManifest";
+import { getCategoryId, sortTextures } from "../logic/textureSorter";
 
 interface ProjectData {
   packName: string;
@@ -9,6 +11,7 @@ interface ProjectData {
   activeItemId: string;
   layers: Layer[];
   activeLayerIndex: number;
+  activeFrameIndex?: number;
   onionSkinRange: number;
 }
 
@@ -68,6 +71,7 @@ export function serializeProject(project: ProjectData): string {
     // Edited active layers are already stored in categories; avoid duplicating pixels.
     canvasLayers: activeItem?.edited ? undefined : project.layers,
     activeLayerIndex: project.activeLayerIndex,
+    activeFrameIndex: project.activeFrameIndex ?? 0,
     onionSkinRange: project.onionSkinRange,
   });
 }
@@ -91,6 +95,8 @@ export function parseProject(serialized: string): ProjectData {
   const layers = activeItem?.edited ? activeItem.savedLayers : value.canvasLayers;
   if ((value.activeItemId !== "" && !activeItem) || !isLayerStack(layers) ||
     value.activeLayerIndex < 0 || value.activeLayerIndex >= layers.length ||
+    (value.activeFrameIndex !== undefined &&
+      (typeof value.activeFrameIndex !== "number" || !Number.isInteger(value.activeFrameIndex) || value.activeFrameIndex < 0)) ||
     new Set(items.map(({ id }) => id)).size !== items.length ||
     new Set(categories.map(({ id }) => id)).size !== categories.length ||
     items.some((item) => item.edited && !item.savedLayers)) {
@@ -99,14 +105,24 @@ export function parseProject(serialized: string): ProjectData {
   if (activeItem) {
     delete activeItem.savedLayers;
   }
+  const activeFrameIndex = typeof value.activeFrameIndex === "number" ? value.activeFrameIndex : 0;
+  const animation = activeItem ? getTextureAnimation(activeItem.filePath, layers[0].data[0].length, layers[0].data.length) : null;
+  if (activeFrameIndex >= (animation?.frames.length ?? 1)) {
+    throw new Error("The local project save contains an invalid selected animation frame.");
+  }
+  const sortedCategories = sortTextures(items.map((item) => item.filePath)).map(({ category, files }) => {
+    const paths = new Set(files);
+    return { id: getCategoryId(category), name: category, items: items.filter((item) => paths.has(item.filePath)) };
+  });
   return {
     packName: value.packName,
     packDescription: value.packDescription,
     packFormat: typeof value.packFormat === "number" ? value.packFormat : 34,
-    categories,
+    categories: sortedCategories,
     activeItemId: value.activeItemId,
     layers,
     activeLayerIndex: value.activeLayerIndex,
+    activeFrameIndex,
     onionSkinRange: value.onionSkinRange,
   };
 }

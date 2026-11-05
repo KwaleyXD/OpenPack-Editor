@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, toRaw, watch } from "vue";
 import {
   renderCanvas,
   type EngineState,
@@ -7,10 +7,12 @@ import {
   type PixelColor,
 } from "../../engine/canvasEngine";
 import { usePackStore } from "../../stores/packState";
+import { createFrameScheduler } from "../../engine/frameScheduler";
 import { getCanvasTransform, zoomAtPoint } from "../../logic/viewportLogic";
+import { frameLayers, getFrameRect, onionFrameSteps, readFrame, writeFrame } from "../../logic/animationLogic";
 import {
   applyFloodFill, applyFillAll, applyPencil, applyEraser, applyDitherPen,
-  applyLine, applyRectangle, applyCircle, getMirroredCoordinates, pickColor,
+  applyLine, applyRectangle, applyCircle, getMirroredCoordinates, pickColor, forEachLinePoint,
   type SymmetryOptions,
 } from "../../logic/toolLogic";
 
@@ -31,12 +33,16 @@ const hoverPosition = ref<{ clientX: number; clientY: number } | null>(null);
 let panDrag: { x: number; y: number; button: number } | null = null;
 let resizeObserver: ResizeObserver | null = null;
 const isDrawing = ref(false);
+const pixelGrid = ref(true);
 let strokeHasSnapshot = false;
+let strokeMarkedEdited = false;
+let previousPixel: { x: number; y: number } | null = null;
 let rightErase = false;
 let shape: {
   tool: "line" | "rectangle" | "circle";
   layer: Layer;
   start: { x: number; y: number };
+  end?: { x: number; y: number };
   original: PixelColor[][];
   preview: PixelColor[][];
   color: string;
@@ -49,21 +55,21 @@ function symmetryOptions(): SymmetryOptions {
 }
 
 const engineState = computed<EngineState>(() => ({
-  width: packStore.width,
-  height: packStore.height,
-  layers: packStore.layers,
+  width: packStore.frameWidth,
+  height: packStore.frameHeight,
+  layers: packStore.frameLayers,
 }));
-const canvasWidth = computed(() => viewportSize.value?.width ?? packStore.width * uiScale);
-const canvasHeight = computed(() => viewportSize.value?.height ?? packStore.height * uiScale);
+const canvasWidth = computed(() => viewportSize.value?.width ?? packStore.frameWidth * uiScale);
+const canvasHeight = computed(() => viewportSize.value?.height ?? packStore.frameHeight * uiScale);
 const view = computed(() => ({ zoomLevel: zoomLevel.value, panOffset: panOffset.value }));
 const transform = computed(() => getCanvasTransform(
-  packStore.width, packStore.height, canvasWidth.value, canvasHeight.value, uiScale, view.value,
+  packStore.frameWidth, packStore.frameHeight, canvasWidth.value, canvasHeight.value, uiScale, view.value,
 ));
 const checkerboardStyle = computed(() => ({
   left: `${Math.round(transform.value.x)}px`,
   top: `${Math.round(transform.value.y)}px`,
-  width: `${Math.round(transform.value.x + packStore.width * transform.value.scale) - Math.round(transform.value.x)}px`,
-  height: `${Math.round(transform.value.y + packStore.height * transform.value.scale) - Math.round(transform.value.y)}px`,
+  width: `${Math.round(transform.value.x + packStore.frameWidth * transform.value.scale) - Math.round(transform.value.x)}px`,
+  height: `${Math.round(transform.value.y + packStore.frameHeight * transform.value.scale) - Math.round(transform.value.y)}px`,
   backgroundSize: `${transform.value.scale}px ${transform.value.scale}px`,
 }));
 const hoverStyle = computed(() => {
@@ -90,11 +96,16 @@ function redraw() {
 
   const state = shape ? {
     ...engineState.value,
-    layers: packStore.layers.map((layer) => layer.id === shape?.layer.id
+    layers: engineState.value.layers.map((layer) => layer.id === shape?.layer.id
       ? { ...layer, data: shape.preview } : layer),
   } : engineState.value;
-  renderCanvas(canvasContext, state, uiScale, packStore.activeLayerIndex, packStore.onionSkinRange, view.value);
+  const animation = packStore.activeAnimation;
+  const onionFrames = animation ? onionFrameSteps(packStore.activeFrameIndex, animation.frames.length, packStore.onionSkinRange)
+    .map((step) => frameLayers(toRaw(packStore.layers), getFrameRect(animation, step))) : [];
+  renderCanvas(canvasContext, state, uiScale, packStore.activeLayerIndex, packStore.onionSkinRange, view.value,
+    { showGrid: pixelGrid.value, onionFrames });
 }
+const frame = createFrameScheduler(redraw);
 
 function getGridCoordinates(
   event: Pick<MouseEvent, "clientX" | "clientY">,
@@ -129,7 +140,10 @@ function leaveCanvas() {
 function measureViewport() {
   const bounds = containerRef.value?.getBoundingClientRect();
   if (bounds && bounds.width > 0 && bounds.height > 0) {
-    viewportSize.value = { width: Math.round(bounds.width), height: Math.round(bounds.height) };
+    const width = Math.round(bounds.width), height = Math.round(bounds.height);
+    if (viewportSize.value?.width !== width || viewportSize.value?.height !== height) {
+      viewportSize.value = { width, height };
+    }
   }
 }
 
@@ -206,13 +220,28 @@ function releaseSpace(event: KeyboardEvent) {
   if (event.code === "Space" || event.key === " ") spaceHeld.value = false;
 }
 
-function paintPixel(event: MouseEvent) {
+function paintStroke(event: MouseEvent) {
   const coordinates = getGridCoordinates(event);
-
   if (!coordinates) {
+    previousPixel = null;
     return;
   }
+  const start = previousPixel ?? coordinates;
+  const layer = packStore.layers[packStore.activeLayerIndex];
+  if (!layer) throw new RangeError("The active layer does not exist.");
+  const data = packStore.activeAnimation ? readFrame(toRaw(layer.data), packStore.frameRect) : toRaw(layer.data);
+  let changed = false;
+  forEachLinePoint(start.x, start.y, coordinates.x, coordinates.y, (x, y) => {
+    if (paintPixel(x, y, data)) changed = true;
+  });
+  if (changed) {
+    if (packStore.activeAnimation) writeFrame(toRaw(layer.data), packStore.frameRect, data);
+    packStore.renderRevision += 1;
+  }
+  previousPixel = isDrawing.value ? coordinates : null;
+}
 
+function paintPixel(x: number, y: number, data: PixelColor[][]) {
   const layer = packStore.layers[packStore.activeLayerIndex];
 
   if (!layer) {
@@ -223,8 +252,9 @@ function paintPixel(event: MouseEvent) {
     return;
   }
 
-  const { x, y } = coordinates;
-  const currentColor = pickColor(layer.data, x, y);
+  // Hot-path writes use one explicit revision per input event rather than
+  // notifying and traversing the reactive grid for every interpolated pixel.
+  const currentColor = pickColor(data, x, y);
   const tool = rightErase ? "eraser" : packStore.activeTool;
 
   if (tool === "eyedropper") {
@@ -241,8 +271,8 @@ function paintPixel(event: MouseEvent) {
     return;
   }
   if (isFill ? currentColor === color :
-    getMirroredCoordinates(layer.data, x, y, symmetry)
-      .every((point) => layer.data[point.y][point.x] === color)) {
+    getMirroredCoordinates(data, x, y, symmetry)
+      .every((point) => data[point.y][point.x] === color)) {
     return;
   }
 
@@ -252,26 +282,30 @@ function paintPixel(event: MouseEvent) {
   }
 
   if (tool === "fill-all") {
-    applyFillAll(layer.data, x, y, packStore.activeColor);
+    applyFillAll(data, x, y, packStore.activeColor);
   } else if (tool === "bucket") {
-    applyFloodFill(layer.data, x, y, packStore.activeColor, symmetry);
+    applyFloodFill(data, x, y, packStore.activeColor, symmetry);
   } else if (tool === "eraser") {
-    applyEraser(layer.data, x, y, symmetry);
+    applyEraser(data, x, y, symmetry);
   } else if (tool === "dither") {
-    applyDitherPen(layer.data, x, y, packStore.activeColor, symmetry);
+    applyDitherPen(data, x, y, packStore.activeColor, symmetry);
   } else {
-    applyPencil(layer.data, x, y, color, symmetry);
+    applyPencil(data, x, y, color, symmetry);
   }
 
-  if (packStore.activeItemId) {
+  if (packStore.activeItemId && !strokeMarkedEdited) {
     packStore.markItemEdited(packStore.activeItemId);
+    strokeMarkedEdited = true;
   }
+  return true;
 }
 
 function updateShape(event: MouseEvent) {
   if (!shape) return;
   const end = getGridCoordinates(event);
   if (!end) return;
+  if (shape.end?.x === end.x && shape.end?.y === end.y) return;
+  shape.end = end;
   const data = shape.original.map((row) => [...row]);
   const { x, y } = shape.start;
   if (shape.tool === "line") {
@@ -282,7 +316,7 @@ function updateShape(event: MouseEvent) {
     applyCircle(data, x, y, end.x, end.y, shape.color, shape.filled, shape.symmetry);
   }
   shape.preview = data;
-  redraw();
+  frame.request();
 }
 
 function startDrawing(event: MouseEvent) {
@@ -294,7 +328,7 @@ function startDrawing(event: MouseEvent) {
   rightErase = event.button === 2;
   if (rightErase) {
     isDrawing.value = true;
-    paintPixel(event);
+    paintStroke(event);
     return;
   }
   const tool = packStore.activeTool;
@@ -303,8 +337,8 @@ function startDrawing(event: MouseEvent) {
     const layer = packStore.layers[packStore.activeLayerIndex];
     if (!start || !layer?.visible) return;
     shape = {
-      tool, layer, start, original: layer.data.map((row) => [...row]),
-      preview: layer.data, color: packStore.activeColor,
+      tool, layer, start, original: readFrame(toRaw(layer.data), packStore.frameRect),
+      preview: readFrame(toRaw(layer.data), packStore.frameRect), color: packStore.activeColor,
       filled: packStore.shapeFilled, symmetry: symmetryOptions(),
     };
     isDrawing.value = true;
@@ -312,7 +346,7 @@ function startDrawing(event: MouseEvent) {
     return;
   }
   isDrawing.value = tool === "pencil" || tool === "eraser" || tool === "dither";
-  paintPixel(event);
+  paintStroke(event);
 }
 
 function continueDrawing(event: MouseEvent) {
@@ -327,7 +361,7 @@ function continueDrawing(event: MouseEvent) {
   }
   if (isDrawing.value &&
     (rightErase || packStore.activeTool === "pencil" || packStore.activeTool === "eraser" || packStore.activeTool === "dither")) {
-    paintPixel(event);
+    paintStroke(event);
   }
 }
 
@@ -338,13 +372,16 @@ function stopDrawing() {
     if (layer.visible && packStore.layers[packStore.activeLayerIndex] === layer &&
       preview.some((row, y) => row.some((color, x) => color !== original[y][x]))) {
       packStore.saveHistorySnapshot();
-      layer.data = preview;
+      writeFrame(toRaw(layer.data), packStore.frameRect, preview);
+      packStore.renderRevision += 1;
       if (packStore.activeItemId) packStore.markItemEdited(packStore.activeItemId);
     }
-    redraw();
+    frame.request();
   }
   isDrawing.value = false;
   strokeHasSnapshot = false;
+  strokeMarkedEdited = false;
+  previousPixel = null;
   rightErase = false;
 }
 
@@ -358,9 +395,11 @@ function cancelDrawing() {
   shape = null;
   isDrawing.value = false;
   strokeHasSnapshot = false;
+  strokeMarkedEdited = false;
+  previousPixel = null;
   rightErase = false;
   if (hadPreview && canvasContext && packStore.activeLayerIndex < packStore.layers.length) {
-    redraw();
+    frame.request();
   }
 }
 
@@ -435,12 +474,14 @@ onUnmounted(() => {
   window.removeEventListener("blur", loseFocus);
   window.removeEventListener("resize", measureViewport);
   resizeObserver?.disconnect();
+  frame.cancel();
   shape = null;
 });
 
 watch(() => [
   packStore.activeTool, packStore.activeLayerIndex, packStore.activeItemId,
   packStore.pendingItemId, packStore.width, packStore.height, packStore.symmetryHorizontal,
+  packStore.activeFrameIndex,
   packStore.symmetryVertical, packStore.shapeFilled,
   packStore.layers[packStore.activeLayerIndex],
   packStore.layers[packStore.activeLayerIndex]?.visible,
@@ -452,14 +493,13 @@ watch(() => [packStore.activeItemId, packStore.categories], () => {
   resetView();
 });
 
+// Navigation must not traverse the pixel grids on every wheel or pan event.
 watch(() => [
-  packStore.layers, packStore.activeLayerIndex, packStore.onionSkinRange,
+  packStore.renderRevision,
+  packStore.activeFrameIndex,
+  packStore.activeLayerIndex, packStore.onionSkinRange, pixelGrid.value,
   packStore.width, packStore.height, canvasWidth.value, canvasHeight.value, view.value,
-], () => {
-  if (canvasContext) {
-    redraw();
-  }
-}, { deep: true, flush: "post" });
+], () => frame.request(), { flush: "post" });
 </script>
 
 <template>
@@ -493,7 +533,8 @@ watch(() => [
       class="pointer-events-none absolute bg-white/25"
       :style="hoverStyle"
     />
-    <div class="absolute bottom-3 right-3 flex items-center gap-2 rounded border border-zinc-600 bg-zinc-900/90 p-1 text-xs text-zinc-100" @mousedown.stop @wheel.stop>
+    <div class="absolute bottom-3 right-3 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center justify-end gap-2 rounded border border-zinc-600 bg-zinc-900/90 p-1 text-xs text-zinc-100" @mousedown.stop @wheel.stop>
+      <button type="button" aria-label="Pixel grid" :aria-pressed="pixelGrid" class="rounded px-2 py-1 hover:bg-zinc-700" @click="pixelGrid = !pixelGrid">Grid</button>
       <button type="button" aria-label="Zoom out" class="rounded px-2 py-1 hover:bg-zinc-700" @click="setZoom(zoomLevel / 1.25)">-</button>
       <output aria-label="Zoom level" class="min-w-12 text-center">{{ zoomReadout }}</output>
       <button type="button" aria-label="Zoom in" class="rounded px-2 py-1 hover:bg-zinc-700" @click="setZoom(zoomLevel * 1.25)">+</button>

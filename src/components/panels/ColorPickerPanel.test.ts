@@ -89,6 +89,38 @@ describe("advanced color management", () => {
     expect(store.activeColor).toBe("#01cdef");
   });
 
+  it("adds only the confirmed custom color instead of filling recent colors with picker adjustments", async () => {
+    const store = usePackStore();
+    const earlierColors = Array.from({ length: 10 }, (_, i) => `#${(i + 1).toString(16).padStart(6, "0")}`);
+    earlierColors.forEach((color) => store.setActiveColor(color));
+    const before = [...store.recentColors];
+    const wrapper = mount(ColorPickerPanel);
+    const picker = wrapper.get<HTMLInputElement>('input[type="color"]');
+
+    for (let i = 0; i < 30; i++) {
+      picker.element.value = `#aabb${i.toString(16).padStart(2, "0")}`;
+      await picker.trigger("input");
+    }
+    expect(store.recentColors).toEqual(before);
+    expect(store.activeColor).toBe(before[0]);
+
+    picker.element.value = "#aabbcc";
+    await picker.trigger("change");
+    expect(store.activeColor).toBe("#aabbcc");
+    expect(store.recentColors).toEqual(["#aabbcc", ...before.slice(0, 9)]);
+    expect(wrapper.findAll('[aria-label^="Recent color "]').map((swatch) => swatch.attributes("title")))
+      .toEqual(store.recentColors);
+
+    picker.element.value = "#aabbcd";
+    await picker.trigger("input");
+    picker.element.value = "#ddeeff";
+    await picker.trigger("change");
+    expect(store.recentColors).toEqual(["#ddeeff", "#aabbcc", ...before.slice(0, 8)]);
+    await wrapper.get('[aria-label="Recent color #aabbcc"]').trigger("click");
+    expect(store.activeColor).toBe("#aabbcc");
+    expect(store.recentColors).toEqual(["#aabbcc", "#ddeeff", ...before.slice(0, 8)]);
+  });
+
   it("saves a named recent-color palette and reloads it into a new store", async () => {
     const store = usePackStore();
     store.setActiveColor("#abcdef80");

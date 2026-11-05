@@ -82,7 +82,7 @@ describe("RightPanel", () => {
     store.layers[0].data[0][0] = "#abcdef";
     store.addLayer();
     await wrapper.vm.$nextTick();
-    expect(context.fillRect).not.toHaveBeenCalled();
+    expect(context.fillRect).toHaveBeenCalledWith(0, 0, 16, 16);
     store.onionSkinRange = 1;
     await wrapper.vm.$nextTick();
     expect(context.fillRect).toHaveBeenCalledWith(0, 0, 16, 16);
@@ -202,7 +202,7 @@ describe("RightPanel", () => {
     expect(slider.attributes("step")).toBe("1");
     await slider.setValue("3");
     expect(store.onionSkinRange).toBe(3);
-    expect(wrapper.text()).toContain("Onion skin range: 3");
+    expect(wrapper.text()).toContain("Onion skin: Next frame");
     expect(store.historyStack).toEqual([]);
   });
 });

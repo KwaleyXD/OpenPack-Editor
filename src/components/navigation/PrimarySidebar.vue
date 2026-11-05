@@ -32,7 +32,7 @@ async function exportPack() {
 </script>
 
 <template>
-  <nav aria-label="Project actions" class="flex h-full w-16 flex-col items-center gap-2 border-r border-zinc-600 bg-[#292929] py-3 text-zinc-100">
+  <nav aria-label="Project actions" class="flex h-full w-full min-w-0 flex-col items-center gap-2 border-r border-zinc-600 bg-[#292929] py-3 text-zinc-100">
     <button type="button" aria-label="Create new pack" title="Create new pack" class="rounded p-3 hover:bg-gray-700 focus-visible:outline focus-visible:outline-sky-400" @click="modal = 'new-pack'">
       <svg aria-hidden="true" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 3h10l6 6v12H4Z M14 3v6h6 M8 15h8m-4-4v8" /></svg>
     </button>
@@ -54,6 +54,6 @@ async function exportPack() {
     <p v-if="message" role="status" class="break-words px-1 text-center text-[10px] text-zinc-300">{{ message }}</p>
     <p v-if="exportError" role="alert" class="break-words px-1 text-center text-[10px] text-red-400">{{ exportError }}</p>
   </nav>
-  <ResizeModal v-if="modal === 'resize'" @close="modal = null" @resized="message = `Active texture resized to ${store.width} by ${store.height}.`" />
+  <ResizeModal v-if="modal === 'resize'" @close="modal = null" @resized="message = `Active texture resized to ${store.frameWidth} by ${store.frameHeight}.`" />
   <NewPackModal v-if="modal === 'new-pack'" @close="modal = null" @created="message = 'New pack created.'" />
 </template>

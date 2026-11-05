@@ -4,6 +4,7 @@ import { createPinia, getActivePinia } from "pinia";
 import { usePackStore } from "../stores/packState";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { initGrid, type Layer } from "./canvasEngine";
+import { parsePngToGrid } from "./imageLoader";
 import {
   buildPackZip,
   exportCanvasToBlob,
@@ -217,6 +218,34 @@ describe("PNG and ZIP export", () => {
     expect(zip.file("assets/minecraft/textures/entity/creeper/creeper.png")).not.toBeNull();
     expect(zip.file("assets/minecraft/textures/gui/sprites/container/slot.png")).not.toBeNull();
     expect(await zip.file("assets/minecraft/textures/block/lava_still.png.mcmeta")!.async("string")).toBe(metadata);
+  });
+
+  it("exports edited animation cells as one full sheet with original playback metadata, not frame ghosts", async () => {
+    vi.mocked(parsePngToGrid).mockImplementationOnce(async (_url, width, height = width) =>
+      Array.from({ length: height }, () => Array<null>(width).fill(null)));
+    const store = usePackStore(createPinia());
+    store.loadTextures(["block/fire_0.png"]);
+    await store.selectItem("block/fire_0.png");
+    // The animation's first playback step uses physical cell 16, not cell 0.
+    expect(store.frameRect.y).toBe(256);
+    store.layers[0].data[0][0] = "#ff0000";
+    store.layers[0].data[256][0] = "#00ff0080";
+    store.layers[0].data[496][0] = "#0000ff";
+    store.onionSkinRange = 2;
+    store.markItemEdited(store.activeItemId);
+    const item = store.getEditedItems()[0];
+    const blob = await buildPackZip("Frames", [item]);
+    const zip = await JSZip.loadAsync(await blob.arrayBuffer());
+    const files = Object.values(zip.files).filter((entry) => !entry.dir).map(({ name }) => name);
+    expect(files).toEqual(["pack.mcmeta", "assets/minecraft/textures/block/fire_0.png", "assets/minecraft/textures/block/fire_0.png.mcmeta"]);
+    expect([canvases[0].width, canvases[0].height]).toEqual([16, 512]);
+    expect(draws).toEqual([
+      { color: "#ff0000", rect: [0, 0, 1, 1] },
+      { color: "#00ff0080", rect: [0, 256, 1, 1] },
+      { color: "#0000ff", rect: [0, 496, 1, 1] },
+    ]);
+    expect(await zip.file("assets/minecraft/textures/block/fire_0.png.mcmeta")!.async("string")).toBe(item.metadata);
+    expect(context.globalAlpha).toBe(1);
   });
 
   it.each(["../entity", "entity/../../evil", "/entity", "entity//creeper", "entity/."])(

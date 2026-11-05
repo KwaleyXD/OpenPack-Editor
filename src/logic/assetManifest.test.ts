@@ -18,11 +18,12 @@ describe("imported default asset manifest", () => {
   it("populates existing categories and dedicated folders for other Minecraft texture types", () => {
     const categories = sortTextures(DEFAULT_TEXTURE_PATHS).map(({ category }) => category);
     expect(categories).toEqual(expect.arrayContaining([
-      "Swords", "Pickaxes", "Axes", "Shovels & Hoes", "Armor & Trims",
+      "Swords", "Pickaxes", "Axes", "Shovels & Hoes", "Armor",
       "Stone & Deepslate", "Wood & Logs", "Leaves & Foliage",
       "Redstone Components", "Food & Consumables",
       "Entity Textures", "GUI Textures", "Particle Textures",
-      "Colormap Textures", "Font Textures", "Trims Textures",
+      "Colormap Textures", "Font Textures", "Trims",
+      "Shelf", "Candle", "Coral", "Planks", "End Stuff", "Spear", "Ores", "Spawn Eggs & Eggs",
     ]));
     const groups = sortTextures(DEFAULT_TEXTURE_PATHS);
     expect(groups.flatMap(({ files }) => files)).toHaveLength(3964);

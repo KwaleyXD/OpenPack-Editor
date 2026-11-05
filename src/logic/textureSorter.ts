@@ -3,14 +3,25 @@ export interface TextureGroup {
   files: string[];
 }
 
-const categoryRules: ReadonlyArray<{
+const priorityRules: ReadonlyArray<{
   category: string;
   matches: (filename: string) => boolean;
 }> = [
-  {
-    category: "Spawn Eggs",
-    matches: (filename) => /spawn_egg.*\.png$/i.test(filename),
-  },
+  { category: "Wood & Logs", matches: (name) => /(?:log|warped_stem|crimson_stem).*\.png$/i.test(name) },
+  { category: "Shelf", matches: (name) => /shelf.*\.png$/i.test(name) },
+  { category: "Candle", matches: (name) => /candle.*\.png$/i.test(name) },
+  { category: "Coral", matches: (name) => /coral.*\.png$/i.test(name) },
+  { category: "Planks", matches: (name) => /plank.*\.png$/i.test(name) },
+  { category: "End Stuff", matches: (name) => /end.*\.png$/i.test(name) },
+  { category: "Spear", matches: (name) => /spear.*\.png$/i.test(name) },
+  { category: "Trims", matches: (name) => /trim.*\.png$/i.test(name) },
+  { category: "Redstone Components", matches: (name) => /rail.*\.png$/i.test(name) },
+  { category: "Ores", matches: (name) => /amethyst.*\.png$/i.test(name) },
+  { category: "Spawn Eggs & Eggs", matches: (name) => /egg.*\.png$/i.test(name) && !/leggings/i.test(name) },
+];
+
+const categoryRules: typeof priorityRules = [
+  ...priorityRules,
   {
     category: "Music Discs & Magic",
     matches: (filename) =>
@@ -18,29 +29,29 @@ const categoryRules: ReadonlyArray<{
   },
   {
     category: "Swords",
-    matches: (filename) => /_sword\.png$/i.test(filename),
+    matches: (filename) => /sword.*\.png$/i.test(filename),
   },
   {
     category: "Pickaxes",
-    matches: (filename) => /_pickaxe\.png$/i.test(filename),
+    matches: (filename) => /pickaxe.*\.png$/i.test(filename),
   },
   {
     category: "Axes",
-    matches: (filename) => /_axe\.png$/i.test(filename),
+    matches: (filename) => /axe.*\.png$/i.test(filename),
   },
   {
     category: "Shovels & Hoes",
-    matches: (filename) => /_(?:shovel|hoe)\.png$/i.test(filename),
+    matches: (filename) => /(?:shovel|hoe).*\.png$/i.test(filename),
   },
   {
     category: "Misc Tools",
     matches: (filename) =>
-      /^(?:fishing_rod|shears|flint_and_steel|compass|recovery_compass|clock|spyglass|brush|shield|elytra|totem_of_undying|lead|name_tag)\.png$/i.test(filename),
+      /(?:fishing_rod|shears|flint_and_steel|compass|recovery_compass|clock|spyglass|brush|shield|elytra|totem_of_undying|lead|name_tag).*\.png$/i.test(filename),
   },
   {
-    category: "Armor & Trims",
+    category: "Armor",
     matches: (filename) =>
-      /(?:_(?:helmet|chestplate|leggings|boots)\.png$|(?:trim|smithing_template).*\.png$)/i.test(filename),
+      /(?:helmet|chestplate|leggings|boots|smithing_template).*\.png$/i.test(filename),
   },
   {
     category: "Ranged & Magic",
@@ -48,11 +59,11 @@ const categoryRules: ReadonlyArray<{
   },
   {
     category: "Vehicles",
-    matches: (filename) => /_(?:boat|raft|minecart)\.png$/i.test(filename),
+    matches: (filename) => /(?:^|_)(?:boat|raft|minecart)(?:_|\.png$)/i.test(filename),
   },
   {
     category: "Stairs, Slabs & Walls",
-    matches: (filename) => /_(?:stairs|slab|wall)\.png$/i.test(filename),
+    matches: (filename) => /(?:stairs|slab|wall).*\.png$/i.test(filename),
   },
   {
     category: "Doors, Trapdoors & Fences",
@@ -63,8 +74,8 @@ const categoryRules: ReadonlyArray<{
     matches: (filename) => /glass.*\.png$/i.test(filename),
   },
   {
-    category: "Ores & Raw Metals",
-    matches: (filename) => /(?:_ore\.png$|^raw_.*\.png$)/i.test(filename),
+    category: "Ores",
+    matches: (filename) => /(?:_ore|raw_).*\.png$/i.test(filename),
   },
   {
     category: "Workstations & Utility",
@@ -79,12 +90,12 @@ const categoryRules: ReadonlyArray<{
   {
     category: "Wood & Logs",
     matches: (filename) =>
-      /(?:_(?:log|stem|wood|hyphae)\.png$|^stripped_.*\.png$)/i.test(filename),
+      /(?:wood|hyphae|stripped_).*\.png$/i.test(filename),
   },
   {
     category: "Leaves & Foliage",
     matches: (filename) =>
-      /(?:_leaves\.png$|(?:vine|azalea|leaf_litter|waterlily).*\.png$)/i.test(filename),
+      /(?:leaves|vine|azalea|leaf_litter|waterlily).*\.png$/i.test(filename),
   },
   {
     category: "Concrete & Terracotta",
@@ -93,14 +104,10 @@ const categoryRules: ReadonlyArray<{
   },
   {
     category: "Materials & Drops",
-    matches: (filename) =>
-      /(?:_(?:dye|ingot|nugget)\.png$|(?:^|_)(?:diamond|emerald|coal|stick|string|feather|gunpowder|flint|leather|brick|paper|book|slime_ball|egg|tear|rod|powder|cream|shard|crystal)\.png$)/i.test(filename),
+    matches: (filename) => !/(?:diamond|iron|copper|gold|coal|emerald|redstone|lapis|lapiz)/i.test(filename) &&
+      /(?:dye|ingot|nugget|stick|string|feather|gunpowder|flint|leather|brick|paper|book|slime_ball|tear|rod|powder|cream|shard|crystal).*\.png$/i.test(filename),
   },
-  {
-    category: "Copper & Metal Blocks",
-    matches: (filename) =>
-      /(?:copper|iron_block|gold_block|emerald_block|diamond_block|netherite_block).*\.png$/i.test(filename),
-  },
+  { category: "Ores", matches: (filename) => /netherite_block.*\.png$/i.test(filename) },
   {
     category: "Nether & End",
     matches: (filename) =>
@@ -136,10 +143,18 @@ const categoryRules: ReadonlyArray<{
     matches: (filename) =>
       /(?:apple|stew|bread|porkchop|fish|beef|chicken|rotten_flesh|cookie|melon|mutton|rabbit|pie|cake|kelp|berries).*\.png$/i.test(filename),
   },
+  {
+    category: "Ores",
+    matches: (filename) => /(?:diamond|iron|copper|gold|coal|emerald|redstone|lapis|lapiz|netherite_block).*\.png$/i.test(filename),
+  },
 ];
 
 function getFilename(assetPath: string): string {
   return assetPath.split(/[\\/]/).pop() ?? assetPath;
+}
+
+export function getCategoryId(categoryName: string): string {
+  return categoryName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
 }
 
 export function sortTextures(assetPaths: readonly string[]): TextureGroup[] {
@@ -150,7 +165,9 @@ export function sortTextures(assetPaths: readonly string[]): TextureGroup[] {
     const folders = assetPath.replace(/\\/g, "/").replace(/^assets\/minecraft\/textures\//, "").split("/");
     const folder = folders.length > 1 ? folders[0] : "";
     const rule = categoryRules.find(({ matches }) => matches(filename));
-    const category = folder && folder !== "item" && folder !== "block" && folder !== "assets"
+    const category = /(?:^|\/)trims?\//i.test(assetPath.replace(/\\/g, "/")) ? "Trims"
+      : rule && priorityRules.includes(rule) ? rule.category
+      : folder && folder !== "item" && folder !== "block" && folder !== "assets"
       ? `${folder === "gui" ? "GUI" : folder.split("_").map((part) => part[0].toUpperCase() + part.slice(1)).join(" ")} Textures`
       : rule?.category ?? "Other";
     const files = grouped.get(category) ?? [];

@@ -6,10 +6,10 @@ import ModalDialog from "./ModalDialog.vue";
 
 const emit = defineEmits<{ close: []; resized: [] }>();
 const store = usePackStore();
-const width = ref(store.width);
-const height = ref(store.height);
+const width = ref(store.frameWidth);
+const height = ref(store.frameHeight);
 const locked = ref(true);
-let aspectRatio = store.width / store.height;
+let aspectRatio = store.frameWidth / store.frameHeight;
 const anchor = ref<CanvasAnchor>("center");
 const resizeContent = ref(false);
 const error = ref("");
@@ -59,6 +59,7 @@ function resize() {
         </label>
       </div>
       <p class="text-xs text-zinc-400">Use 16, 32, 64, or custom dimensions. Only the active texture is resized.</p>
+      <p v-if="store.activeAnimation" class="text-xs text-zinc-400">These are frame dimensions. All frames are resized together, preserving their playback order and timing.</p>
       <fieldset :disabled="resizeContent">
         <legend class="mb-2 text-sm">Anchor point</legend>
         <div class="grid w-32 grid-cols-3 gap-1">

@@ -3,7 +3,6 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import AssetExplorer from "./AssetExplorer.vue";
 import { usePackStore } from "../../stores/packState";
-import { initGrid } from "../../engine/canvasEngine";
 import { parsePngToGrid } from "../../engine/imageLoader";
 
 vi.mock("../../engine/imageLoader", () => ({ parsePngToGrid: vi.fn() }));
@@ -16,20 +15,42 @@ describe("AssetExplorer", () => {
     pinia = createPinia();
     setActivePinia(pinia);
     vi.mocked(parsePngToGrid).mockReset();
-    vi.mocked(parsePngToGrid).mockImplementation(async (_url, size) => initGrid(size));
+    vi.mocked(parsePngToGrid).mockImplementation(async (_url, width, height = width) =>
+      Array.from({ length: height }, () => Array<null>(width).fill(null)));
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function (this: HTMLCanvasElement) {
+      return { canvas: this, clearRect: vi.fn(), fillRect: vi.fn() } as unknown as CanvasRenderingContext2D;
+    });
   });
 
   afterEach(() => {
     usePackStore(pinia).$dispose();
     localStorage.clear();
+    vi.restoreAllMocks();
   });
 
   it("shows an empty state when no textures are loaded", () => {
     const wrapper = mount(AssetExplorer, {
       global: { plugins: [pinia] },
     });
-
     expect(wrapper.text()).toContain("No textures loaded");
+  });
+
+  it("loads real thumbnail URLs lazily and reports image failures", async () => {
+    const store = usePackStore();
+    store.loadTextures(["assets/minecraft/textures/block/stone.png"]);
+    const wrapper = mount(AssetExplorer);
+    await wrapper.get('button[aria-expanded]').trigger("click");
+    const image = wrapper.get("img");
+    expect(image.attributes("src")).toBe("/vanilla_base/block/stone.png");
+    expect(image.attributes("loading")).toBe("lazy");
+    expect(image.attributes("decoding")).toBe("async");
+    await image.trigger("error");
+    expect(wrapper.get('[role="img"]').attributes("aria-label")).toContain("Unable to load preview");
+    await wrapper.get('button[title="assets/minecraft/textures/block/stone.png"]').trigger("click");
+    await flushPromises();
+    expect(wrapper.find("canvas").exists()).toBe(true);
+    expect(wrapper.find('[title^="Unable to load preview"]').exists()).toBe(false);
+    wrapper.unmount();
   });
 
   it("renders category progress and toggles its item list", async () => {
@@ -65,7 +86,8 @@ describe("AssetExplorer", () => {
 
     const wrapper = mount(AssetExplorer, {
       global: { plugins: [pinia] },
-    });
+  });
+
     await wrapper.get('button[aria-expanded]').trigger("click");
     const itemButton = wrapper.get(`button[title="${itemId}"]`);
 
@@ -75,6 +97,28 @@ describe("AssetExplorer", () => {
     expect(store.activeItemId).toBe(itemId);
     expect(itemButton.attributes("aria-current")).toBe("true");
     expect(itemButton.classes()).toContain("bg-sky-500/20");
+  });
+
+  it("expands an animation into selectable frames while counting it as one texture", async () => {
+    const store = usePackStore();
+    store.loadTextures(["block/lantern.png"]);
+    const wrapper = mount(AssetExplorer);
+    await wrapper.get('button[aria-expanded]').trigger("click");
+    const toggle = wrapper.get('[aria-label="Expand frames of lantern.png"]');
+    expect(store.categoryProgress(store.categories[0].id).total).toBe(1);
+    expect(wrapper.find('[aria-label="Frames of lantern.png"]').exists()).toBe(false);
+    await toggle.trigger("click");
+    expect(wrapper.get('[aria-label="Frames of lantern.png"]').findAll("button")).toHaveLength(3);
+    expect(parsePngToGrid).not.toHaveBeenCalled();
+    await wrapper.get('[aria-label="lantern.png: frame 3"]').trigger("click");
+    await flushPromises();
+    expect(store.activeItemId).toBe("block/lantern.png");
+    expect(store.activeFrameIndex).toBe(2);
+    expect(wrapper.get('[aria-label="lantern.png: frame 3"]').attributes("aria-current")).toBe("true");
+    expect(store.historyStack).toEqual([]);
+    await toggle.trigger("click");
+    expect(wrapper.find('[aria-label="Frames of lantern.png"]').exists()).toBe(false);
+    wrapper.unmount();
   });
 
   it("shows an edited indicator for completed textures", async () => {

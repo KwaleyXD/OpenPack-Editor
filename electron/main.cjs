@@ -29,10 +29,11 @@ function createWindow() {
   const win = new BrowserWindow({
     width: 1440,
     height: 900,
-    minWidth: 960,
+    minWidth: 640,
     minHeight: 600,
     backgroundColor: "#1e1e1e",
     title: "OpenPack Studio",
+    icon: path.join(DIST_DIR, "logo.png"),
     autoHideMenuBar: true,
     webPreferences: {
       contextIsolation: true,

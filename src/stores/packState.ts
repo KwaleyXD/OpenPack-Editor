@@ -1,7 +1,7 @@
 import { defineStore } from "pinia";
-import { effectScope, watch } from "vue";
-import { sortTextures } from "../logic/textureSorter";
-import { DEFAULT_TEXTURE_PATHS, DEFAULT_TEXTURE_BY_PATH } from "../logic/assetManifest";
+import { effectScope, toRaw, watch } from "vue";
+import { getCategoryId, sortTextures } from "../logic/textureSorter";
+import { DEFAULT_TEXTURE_PATHS, DEFAULT_TEXTURE_BY_PATH, getTextureAnimation } from "../logic/assetManifest";
 import { getTexturePath } from "../logic/texturePaths";
 import { initGrid, type Layer } from "../engine/canvasEngine";
 import { resizeLayer, type CanvasAnchor } from "../logic/canvasResize";
@@ -10,6 +10,7 @@ import type { DrawingTool } from "../logic/toolLogic";
 import { parsePngToGrid } from "../engine/imageLoader";
 import { parseProject, serializeProject } from "./projectPersistence";
 import { normalizeHex, parsePalettes, type ColorPalette } from "../logic/colorLogic";
+import { frameLayers, getFrameRect, readFrame, writeFrame, type FrameRect, type TextureAnimation } from "../logic/animationLogic";
 
 const HISTORY_LIMIT = 30;
 const LOCAL_SAVE_KEY = "openpack_save";
@@ -39,10 +40,6 @@ function getFilename(filePath: string): string {
   return filePath.split(/[\\/]/).pop() ?? filePath;
 }
 
-function getCategoryId(categoryName: string): string {
-  return categoryName.toLowerCase().replace(/[^a-z0-9]+/g, "-");
-}
-
 const definePackStore = defineStore("pack", {
   state: () => ({
     packName: "My Custom Pack",
@@ -64,7 +61,9 @@ const definePackStore = defineStore("pack", {
     symmetryVertical: false,
     shapeFilled: false,
     activeLayerIndex: 0,
+    activeFrameIndex: 0,
     onionSkinRange: 0,
+    renderRevision: 0,
     activeTool: "pencil" as DrawingTool,
     layers: [
       { id: "layer-0", name: "Layer 1", visible: true, data: initGrid(16) },
@@ -74,6 +73,21 @@ const definePackStore = defineStore("pack", {
   }),
 
   getters: {
+    activeAnimation(state): TextureAnimation | null {
+      const item = state.categories.flatMap(({ items }) => items).find(({ id }) => id === state.activeItemId);
+      return item ? getTextureAnimation(item.filePath, state.width, state.height) : null;
+    },
+    frameRect(state): FrameRect {
+      return this.activeAnimation ? getFrameRect(this.activeAnimation, state.activeFrameIndex) :
+        { x: 0, y: 0, width: state.width, height: state.height };
+    },
+    frameWidth(): number { return this.frameRect.width; },
+    frameHeight(): number { return this.frameRect.height; },
+    frameLayers(state): Layer[] {
+      // Raw brush writes publish renderRevision once per input event.
+      void state.renderRevision;
+      return this.activeAnimation ? frameLayers(toRaw(state.layers), this.frameRect) : toRaw(state.layers);
+    },
     getEditedItems: (state) => (): EditedTexture[] =>
       state.categories.flatMap(({ items }) => items)
         .filter((item) => item.edited)
@@ -83,12 +97,22 @@ const definePackStore = defineStore("pack", {
             throw new Error(`Edited texture "${item.name}" has no saved pixel data.`);
           }
           const path = getTexturePath(item.filePath);
+          const width = layers[0].data[0].length, height = layers[0].data.length;
+          const source = DEFAULT_TEXTURE_BY_PATH.get(`${path.categoryPath}/${path.id}.png`);
+          const animation = getTextureAnimation(item.filePath, width, height);
+          let metadata = source?.metadata;
+          if (metadata && animation && (source?.width !== width || source?.height !== height)) {
+            const updated = JSON.parse(metadata);
+            updated.animation.width = animation.width;
+            updated.animation.height = animation.height;
+            metadata = JSON.stringify(updated);
+          }
           return {
             ...path,
-            metadata: DEFAULT_TEXTURE_BY_PATH.get(`${path.categoryPath}/${path.id}.png`)?.metadata,
+            metadata,
             layers,
-            width: layers[0].data[0]?.length ?? 0,
-            height: layers[0].data.length,
+            width,
+            height,
           };
         }),
 
@@ -118,6 +142,11 @@ const definePackStore = defineStore("pack", {
   },
 
   actions: {
+    selectFrame(index: number) {
+      if (!this.activeAnimation) throw new Error("The selected texture has no animation frames.");
+      getFrameRect(this.activeAnimation, index);
+      this.activeFrameIndex = index;
+    },
     setActiveColor(color: string) {
       this.activeColor = normalizeHex(color);
       if (this.recentColors[0] !== this.activeColor) {
@@ -207,16 +236,33 @@ const definePackStore = defineStore("pack", {
     },
 
     resizeCanvasAdvanced(newWidth: number, newHeight: number, anchor: CanvasAnchor, resizeContent: boolean) {
-      const layers = this.layers.map((layer) => ({
-        ...layer, data: resizeLayer(layer.data, newWidth, newHeight, anchor, resizeContent),
-      }));
-      if (newWidth === this.width && newHeight === this.height) {
+      const animation = this.activeAnimation;
+      const layers = this.layers.map((layer) => {
+        if (!animation) return { ...layer, data: resizeLayer(layer.data, newWidth, newHeight, anchor, resizeContent) };
+        // Resize each physical cell, including cells omitted or repeated by the playback sequence.
+        const cells = Array.from({ length: animation.columns * animation.rows }, (_, index) => {
+          const rect = {
+            x: (index % animation.columns) * animation.width,
+            y: Math.floor(index / animation.columns) * animation.height,
+            width: animation.width, height: animation.height,
+          };
+          return resizeLayer(readFrame(layer.data, rect), newWidth, newHeight, anchor, resizeContent);
+        });
+        const data = Array.from({ length: newHeight * animation.rows }, () =>
+          Array<null>(newWidth * animation.columns).fill(null));
+        cells.forEach((cell, index) => writeFrame(data, {
+          x: (index % animation.columns) * newWidth, y: Math.floor(index / animation.columns) * newHeight,
+          width: newWidth, height: newHeight,
+        }, cell));
+        return { ...layer, data };
+      });
+      if (newWidth === this.frameWidth && newHeight === this.frameHeight) {
         return;
       }
       this.saveHistorySnapshot();
       this.layers = layers;
-      this.width = newWidth;
-      this.height = newHeight;
+      this.width = newWidth * (animation?.columns ?? 1);
+      this.height = newHeight * (animation?.rows ?? 1);
       if (this.activeItemId) {
         this.markItemEdited(this.activeItemId);
       }
@@ -339,6 +385,7 @@ const definePackStore = defineStore("pack", {
       this.width = 16;
       this.height = 16;
       this.activeLayerIndex = 0;
+      this.activeFrameIndex = 0;
       this.historyStack = [];
       this.redoStack = [];
       this.categories = sortTextures(filePaths).map(({ category, files }) => ({
@@ -382,6 +429,7 @@ const definePackStore = defineStore("pack", {
             : await parsePngToGrid(url, width, height);
           layers = [{ id: "layer-0", name: "Vanilla Base", visible: true, data }];
         }
+        getTextureAnimation(next.filePath, layers[0].data[0].length, layers[0].data.length);
         // A newer selection or pack reload supersedes this result.
         if (requestId !== this.selectionRequestId) {
           return;
@@ -397,6 +445,7 @@ const definePackStore = defineStore("pack", {
         this.width = this.layers[0]?.data[0]?.length ?? 16;
         this.height = this.layers[0]?.data.length ?? 16;
         this.activeLayerIndex = 0;
+        this.activeFrameIndex = 0;
         this.historyStack = [];
         this.redoStack = [];
       } catch (error) {
@@ -452,17 +501,25 @@ export const usePackStore = Object.assign(
     };
     scope.run(() => {
       watch(() => store.activeColor, (color) => store.rememberColor(color), { flush: "sync" });
+      const scheduleSave = () => {
+        canSave = true;
+        clearTimeout(timer);
+        timer = setTimeout(flushSave, 1000);
+      };
+      // Traverse pixel data once per mutation batch, shared by all preview consumers.
+      watch(() => store.layers, () => {
+        store.renderRevision += 1;
+        scheduleSave();
+      }, { deep: true, flush: "post" });
+      // Asset metadata must not be traversed again for every brush movement.
+      watch(() => store.categories, scheduleSave, { deep: true, flush: "post" });
       watch(
         () => [
-          store.packName, store.packDescription, store.packFormat, store.categories, store.layers,
-          store.activeItemId, store.activeLayerIndex, store.onionSkinRange,
+          store.packName, store.packDescription, store.packFormat,
+          store.activeItemId, store.activeLayerIndex, store.activeFrameIndex, store.onionSkinRange, store.renderRevision,
         ],
-        () => {
-          canSave = true;
-          clearTimeout(timer);
-          timer = setTimeout(flushSave, 1000);
-        },
-        { deep: true, flush: "post" },
+        scheduleSave,
+        { flush: "post" },
       );
     });
     window.addEventListener("pagehide", flushSave);

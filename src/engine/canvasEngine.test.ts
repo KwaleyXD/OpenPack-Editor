@@ -8,6 +8,54 @@ import {
 } from "./canvasEngine";
 
 describe("viewport rendering", () => {
+  it("samples minified textures at destination pixel centers with bounded draw work", () => {
+    const context = createContextMock();
+    const data = Array.from({ length: 128 }, () => Array(128).fill("#123456"));
+    data[1][1] = "#abcdef";
+    const colors: Array<string | CanvasGradient | CanvasPattern> = [];
+    vi.mocked(context.fillRect).mockImplementation(() => { colors.push(context.fillStyle); });
+    renderCanvas(context, {
+      width: 128, height: 128,
+      layers: [{ id: "base", name: "Base", visible: true, data }],
+    }, 0.5, 0, 0, undefined, { showGrid: false });
+    expect(context.fillRect).toHaveBeenCalledTimes(64 * 64);
+    expect(colors[0]).toBe("#abcdef");
+    expect(context.globalAlpha).toBe(1);
+    expect(vi.mocked(context.fillRect).mock.calls.every(([, , width, height]) => width === 1 && height === 1)).toBe(true);
+  });
+
+  it("uses the original subtle outlines without clearing gaps or changing texture data", () => {
+    const context = createContextMock();
+    const state: EngineState = {
+      width: 16, height: 16,
+      layers: [{ id: "base", name: "Base", visible: true, data: Array.from({ length: 16 }, () => Array(16).fill("#123456")) }],
+    };
+    const before = JSON.stringify(state);
+    renderCanvas(context, state, 4, 0, 0);
+    expect(context.clearRect).toHaveBeenCalledOnce();
+    expect(context.strokeStyle).toBe("rgba(0, 0, 0, 0.18)");
+    expect(context.lineWidth).toBe(1);
+    expect(context.strokeRect).toHaveBeenCalledTimes(256);
+    expect(JSON.stringify(state)).toBe(before);
+    vi.mocked(context.clearRect).mockClear();
+    vi.mocked(context.strokeRect).mockClear();
+    renderCanvas(context, state, 4, 0, 0, undefined, { showGrid: false });
+    expect(context.clearRect).toHaveBeenCalledOnce();
+    expect(context.strokeRect).not.toHaveBeenCalled();
+  });
+
+  it("hides outlines at low zoom and aligns them at fractional zoom", () => {
+    const context = createContextMock();
+    const state: EngineState = { width: 2, height: 2, layers: [] };
+    renderCanvas(context, state, 32, 0, 0, { zoomLevel: 0.1, panOffset: { x: 0, y: 0 } });
+    expect(context.clearRect).toHaveBeenCalledOnce();
+    expect(context.strokeRect).not.toHaveBeenCalled();
+    vi.mocked(context.clearRect).mockClear();
+    renderCanvas(context, state, 32, 0, 0, { zoomLevel: 0.23, panOffset: { x: 0.3, y: 0.4 } });
+    expect(context.clearRect).toHaveBeenCalledOnce();
+    expect(context.strokeRect).toHaveBeenCalledTimes(4);
+    expect(vi.mocked(context.strokeRect).mock.calls.flat().every(Number.isInteger)).toBe(true);
+  });
   it("uses the supplied zoom and screen-space pan while keeping draw bounds on integer pixels", () => {
     const context = createContextMock();
     const state: EngineState = {
@@ -159,7 +207,7 @@ describe("createEngineState", () => {
 });
 
 describe("renderCanvas", () => {
-  it.each([0, 1, 2, 3])("renders exact distance-based alpha values at range %s", (range) => {
+  it.each([0, 1, 2, 3])("composites all visible layers at full opacity regardless of onion mode %s", (range) => {
     const context = createContextMock();
     const draws: Array<{ color: string | CanvasGradient | CanvasPattern; alpha: number }> = [];
     vi.mocked(context.fillRect).mockImplementation(() => {
@@ -174,10 +222,7 @@ describe("renderCanvas", () => {
     };
     context.globalAlpha = 0.1;
     renderCanvas(context, state, 4, 4, range);
-    expect(draws).toEqual(state.layers.flatMap((layer, index) => {
-      const distance = Math.abs(index - 4);
-      return distance <= range ? [{ color: layer.data[0][0], alpha: 1 / 2 ** distance }] : [];
-    }));
+    expect(draws).toEqual(state.layers.map((layer) => ({ color: layer.data[0][0], alpha: 1 })));
     expect(context.globalAlpha).toBe(1);
     expect(context.strokeRect).toHaveBeenCalledOnce();
   });
@@ -196,7 +241,7 @@ describe("renderCanvas", () => {
     expect(context.globalAlpha).toBe(1);
   });
 
-  it("keeps neighboring layers translucent on every row", () => {
+  it("overlays translucent frame ghosts without dimming the active frame", () => {
     const context = createContextMock();
     const alphas: number[] = [];
     vi.mocked(context.fillRect).mockImplementation(() => alphas.push(context.globalAlpha));
@@ -207,8 +252,10 @@ describe("renderCanvas", () => {
         { id: "b", name: "B", visible: true, data: [[null], [null]] },
       ],
     };
-    renderCanvas(context, state, 4, 1, 1);
-    expect(alphas).toEqual([0.5, 0.5]);
+    renderCanvas(context, state, 4, 1, 1, undefined, {
+      onionFrames: [[{ id: "previous", name: "Previous", visible: true, data: [["#ff0000"], ["#ff0000"]] }]],
+    });
+    expect(alphas).toEqual([1, 1, 0.3, 0.3]);
     expect(context.globalAlpha).toBe(1);
   });
 
