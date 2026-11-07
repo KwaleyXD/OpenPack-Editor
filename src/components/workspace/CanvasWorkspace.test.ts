@@ -87,6 +87,31 @@ describe("CanvasWorkspace", () => {
     expect(JSON.stringify(store.layers)).toBe(before);
   });
 
+  it("lightens and darkens pixels once per stroke, with symmetry and undo", async () => {
+    const store = usePackStore();
+    store.layers[0].data[0][0] = "#80808080";
+    store.layers[0].data[0][15] = "#40404080";
+    store.activeTool = "shade";
+    store.symmetryHorizontal = true;
+    store.shadeMode = "darken";
+    const wrapper = mount(CanvasWorkspace);
+    const canvas = wrapper.get("canvas");
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    await canvas.trigger("mousemove", { buttons: 1, clientX: 1, clientY: 1 });
+    await canvas.trigger("mouseup");
+    expect(store.layers[0].data[0][0]).toBe("#66666680");
+    expect(store.layers[0].data[0][15]).toBe("#33333380");
+    expect(store.historyStack).toHaveLength(1);
+    store.undo();
+    expect(store.layers[0].data[0][0]).toBe("#80808080");
+    expect(store.layers[0].data[0][15]).toBe("#40404080");
+
+    store.shadeMode = "lighten";
+    await canvas.trigger("mousedown", { button: 0, clientX: 1, clientY: 1 });
+    await canvas.trigger("mouseup");
+    expect(store.layers[0].data[0][0]).toBe("#99999980");
+  });
+
   it("interpolates diagonal right-drag erasing with symmetry", async () => {
     const store = usePackStore();
     store.layers[0].data.forEach(row => row.fill("#ffffff"));

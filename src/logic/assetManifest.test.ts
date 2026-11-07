@@ -38,7 +38,7 @@ describe("imported default asset manifest", () => {
       expect(bytes.readUInt32BE(16)).toBe(texture.width);
       expect(bytes.readUInt32BE(20)).toBe(texture.height);
       if (texture.metadata !== undefined) {
-        expect(readFileSync(`${file}.mcmeta`, "utf8")).toBe(texture.metadata);
+        expect(readFileSync(`${file}.mcmeta`, "utf8").replace(/\r\n/g, "\n")).toBe(texture.metadata);
         expect(() => JSON.parse(texture.metadata!)).not.toThrow();
       }
     }

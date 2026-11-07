@@ -11,7 +11,7 @@ import { createFrameScheduler } from "../../engine/frameScheduler";
 import { getCanvasTransform, zoomAtPoint } from "../../logic/viewportLogic";
 import { frameLayers, getFrameRect, onionFrameSteps, readFrame, writeFrame } from "../../logic/animationLogic";
 import {
-  applyFloodFill, applyFillAll, applyPencil, applyEraser, applyDitherPen,
+  applyFloodFill, applyFillAll, applyPencil, applyEraser, applyDitherPen, applyShade, shadeColor,
   applyLine, applyRectangle, applyCircle, getMirroredCoordinates, pickColor, forEachLinePoint,
   type SymmetryOptions,
 } from "../../logic/toolLogic";
@@ -36,6 +36,7 @@ const isDrawing = ref(false);
 const pixelGrid = ref(true);
 let strokeHasSnapshot = false;
 let strokeMarkedEdited = false;
+let shadedPixels = new Set<string>();
 let previousPixel: { x: number; y: number } | null = null;
 let rightErase = false;
 let shape: {
@@ -267,12 +268,21 @@ function paintPixel(x: number, y: number, data: PixelColor[][]) {
   const color = tool === "eraser" ? null : packStore.activeColor;
   const isFill = tool === "bucket" || tool === "fill-all";
   const symmetry = symmetryOptions();
+  if (tool === "shade") {
+    const points = getMirroredCoordinates(data, x, y, symmetry);
+    if (points.every(({ x: px, y: py }) => shadedPixels.has(`${px},${py}`))) return;
+    points.forEach(({ x: px, y: py }) => shadedPixels.add(`${px},${py}`));
+    if (points.every(({ x: px, y: py }) => {
+      const pixel = data[py][px];
+      return pixel === null || shadeColor(pixel, packStore.shadeMode) === pixel;
+    })) return;
+  }
   if (tool === "dither" && (x + y) % 2 !== 0) {
     return;
   }
-  if (isFill ? currentColor === color :
+  if (tool !== "shade" && (isFill ? currentColor === color :
     getMirroredCoordinates(data, x, y, symmetry)
-      .every((point) => data[point.y][point.x] === color)) {
+      .every((point) => data[point.y][point.x] === color))) {
     return;
   }
 
@@ -289,6 +299,8 @@ function paintPixel(x: number, y: number, data: PixelColor[][]) {
     applyEraser(data, x, y, symmetry);
   } else if (tool === "dither") {
     applyDitherPen(data, x, y, packStore.activeColor, symmetry);
+  } else if (tool === "shade") {
+    applyShade(data, x, y, packStore.shadeMode, symmetry);
   } else {
     applyPencil(data, x, y, color, symmetry);
   }
@@ -345,7 +357,7 @@ function startDrawing(event: MouseEvent) {
     updateShape(event);
     return;
   }
-  isDrawing.value = tool === "pencil" || tool === "eraser" || tool === "dither";
+  isDrawing.value = tool === "pencil" || tool === "eraser" || tool === "dither" || tool === "shade";
   paintStroke(event);
 }
 
@@ -360,7 +372,8 @@ function continueDrawing(event: MouseEvent) {
     return;
   }
   if (isDrawing.value &&
-    (rightErase || packStore.activeTool === "pencil" || packStore.activeTool === "eraser" || packStore.activeTool === "dither")) {
+    (rightErase || packStore.activeTool === "pencil" || packStore.activeTool === "eraser" ||
+      packStore.activeTool === "dither" || packStore.activeTool === "shade")) {
     paintStroke(event);
   }
 }
@@ -381,6 +394,7 @@ function stopDrawing() {
   isDrawing.value = false;
   strokeHasSnapshot = false;
   strokeMarkedEdited = false;
+  shadedPixels.clear();
   previousPixel = null;
   rightErase = false;
 }
@@ -396,6 +410,7 @@ function cancelDrawing() {
   isDrawing.value = false;
   strokeHasSnapshot = false;
   strokeMarkedEdited = false;
+  shadedPixels.clear();
   previousPixel = null;
   rightErase = false;
   if (hadPreview && canvasContext && packStore.activeLayerIndex < packStore.layers.length) {

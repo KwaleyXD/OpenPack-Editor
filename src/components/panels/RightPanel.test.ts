@@ -135,14 +135,25 @@ describe("RightPanel", () => {
     const { store, wrapper } = mountPanel();
     for (const [name, tool] of [
       ["Eraser", "eraser"], ["Paint Bucket", "bucket"], ["Fill All", "fill-all"],
-      ["Eyedropper", "eyedropper"], ["Pencil", "pencil"],
+      ["Eyedropper", "eyedropper"], ["Lighten / Darken", "shade"], ["Pencil", "pencil"],
     ]) {
       const button = wrapper.get(`button[aria-label="${name}"]`);
       await button.trigger("click");
       expect(store.activeTool).toBe(tool);
       expect(button.attributes("aria-pressed")).toBe("true");
-      expect(wrapper.findAll('section[aria-label="Drawing tools"] button[aria-pressed="true"]')).toHaveLength(1);
+      expect(wrapper.findAll('section[aria-label="Drawing tools"] .grid button[aria-pressed="true"]')).toHaveLength(1);
     }
+  });
+
+  it("lets the shading tool switch between lightening and darkening", async () => {
+    const { store, wrapper } = mountPanel();
+    await wrapper.get('button[aria-label="Lighten / Darken"]').trigger("click");
+    expect(store.shadeMode).toBe("lighten");
+    await wrapper.get('button[aria-label="Darken pixels"]').trigger("click");
+    expect(store.shadeMode).toBe("darken");
+    expect(wrapper.get('button[aria-label="Darken pixels"]').attributes("aria-pressed")).toBe("true");
+    await wrapper.get('button[aria-label="Lighten pixels"]').trigger("click");
+    expect(store.shadeMode).toBe("lighten");
   });
 
   it("adds an independent blank layer, selects layers, and toggles visibility", async () => {

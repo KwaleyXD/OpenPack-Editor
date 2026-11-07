@@ -14,6 +14,7 @@ const layersHeight = ref(160);
 
 const tools: ReadonlyArray<{ id: DrawingTool; name: string; path: string }> = [
   { id: "pencil", name: "Pencil", path: "m3 17 1 4 4-1L20 8l-4-4Z M14 6l4 4" },
+  { id: "shade", name: "Lighten / Darken", path: "M12 3v3m0 12v3M3 12h3m12 0h3M5.64 5.64l2.12 2.12m8.48 8.48 2.12 2.12m0-12.72-2.12 2.12m-8.48 8.48-2.12 2.12M12 8a4 4 0 1 0 0 8" },
   { id: "eraser", name: "Eraser", path: "m3 14 8-10 9 7-8 10H8Z M7 10l9 7 M12 21h9" },
   { id: "bucket", name: "Paint Bucket", path: "m4 11 7-7 8 8-7 7Z M8 2l4 4 M3 11h16 M20 16q-4 5 0 5t0-5" },
   { id: "fill-all", name: "Fill All", path: "M3 3h7v7H3Zm11 0h7v7h-7ZM3 14h7v7H3Zm11 0h7v7h-7Z M6 6h1m10 0h1M6 17h1m10 0h1" },
@@ -62,6 +63,20 @@ const tools: ReadonlyArray<{ id: DrawingTool; name: string; path: string }> = [
             <path :d="tool.path" />
           </svg>
         </button>
+      </div>
+      <div v-if="store.activeTool === 'shade'" class="mt-2 flex gap-1" aria-label="Shading mode">
+        <button
+          type="button" aria-label="Lighten pixels" :aria-pressed="store.shadeMode === 'lighten'"
+          class="flex-1 rounded border px-2 py-1 text-xs"
+          :class="store.shadeMode === 'lighten' ? 'border-sky-400 bg-sky-500/20' : 'border-zinc-600 hover:bg-zinc-700'"
+          @click="store.shadeMode = 'lighten'"
+        >Lighten</button>
+        <button
+          type="button" aria-label="Darken pixels" :aria-pressed="store.shadeMode === 'darken'"
+          class="flex-1 rounded border px-2 py-1 text-xs"
+          :class="store.shadeMode === 'darken' ? 'border-sky-400 bg-sky-500/20' : 'border-zinc-600 hover:bg-zinc-700'"
+          @click="store.shadeMode = 'darken'"
+        >Darken</button>
       </div>
       <div class="mt-2 space-y-1 text-xs">
         <label class="flex items-center gap-1"><input v-model="store.shapeFilled" type="checkbox" />Filled shapes</label>

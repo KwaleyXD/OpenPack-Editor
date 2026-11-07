@@ -142,9 +142,12 @@ The left action bar has **Create new pack** and **Resize canvas**:
   pads with transparent pixels using a nine-point anchor. Center offsets are
   rounded down when the dimension difference is odd. Resize is one undo step.
 
-The right panel provides pencil, eraser, bucket, Fill All, eyedropper, line, rectangle,
-ellipse, and checkerboard dither tools. Drag to preview a shape, then release
-to commit it as one undo step. Right-click or right-drag temporarily erases
+The right panel provides pencil, eraser, bucket, Fill All, eyedropper, a Lighten / Darken
+shading brush, line, rectangle, ellipse, and checkerboard dither tools. Choose
+whether the shading brush lightens or darkens from the tool controls; it preserves pixel
+transparency, supports symmetry, and shades each pixel once per drag. Drag to
+preview a shape, then release to commit it as one undo step. Right-click or
+right-drag temporarily erases
 without changing the selected tool.
 **Fill All** replaces every pixel matching the clicked color on the active
 layer, including disconnected regions (or all transparent pixels when clicked).

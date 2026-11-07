@@ -3,7 +3,27 @@ import { initGrid } from "../engine/canvasEngine";
 import {
   applyFloodFill, applyFillAll, applyPencil, applyEraser, pickColor, applyLine,
   applyRectangle, applyCircle, applyDitherPen, getMirroredCoordinates,
+  applyShade, shadeColor,
 } from "./toolLogic";
+
+describe("pixel shading", () => {
+  it("lightens and darkens RGB channels while preserving alpha", () => {
+    expect(shadeColor("#80402080", "lighten")).toBe("#99664d80");
+    expect(shadeColor("#80402080", "darken")).toBe("#66331a80");
+    expect(shadeColor("#abc", "lighten")).toBe("#bbc9d6");
+  });
+
+  it("leaves transparent pixels untouched and applies symmetry", () => {
+    const data = [[null, "#808080", "#000000", null]];
+    applyShade(data, 1, 0, "lighten", { horizontal: true });
+    expect(data).toEqual([[null, "#999999", "#333333", null]]);
+  });
+
+  it("rejects malformed colors and invalid adjustment amounts", () => {
+    expect(() => shadeColor("red", "lighten")).toThrow(RangeError);
+    expect(() => shadeColor("#ffffff", "darken", 2)).toThrow(RangeError);
+  });
+});
 
 describe("Fill All", () => {
   it("replaces disconnected occurrences while preserving other colors and alpha", () => {

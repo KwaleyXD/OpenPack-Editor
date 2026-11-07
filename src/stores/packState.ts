@@ -6,7 +6,7 @@ import { getTexturePath } from "../logic/texturePaths";
 import { initGrid, type Layer } from "../engine/canvasEngine";
 import { resizeLayer, type CanvasAnchor } from "../logic/canvasResize";
 import type { EditedTexture } from "../engine/exportEngine";
-import type { DrawingTool } from "../logic/toolLogic";
+import type { DrawingTool, ShadeMode } from "../logic/toolLogic";
 import { parsePngToGrid } from "../engine/imageLoader";
 import { parseProject, serializeProject } from "./projectPersistence";
 import { normalizeHex, parsePalettes, type ColorPalette } from "../logic/colorLogic";
@@ -65,6 +65,7 @@ const definePackStore = defineStore("pack", {
     onionSkinRange: 0,
     renderRevision: 0,
     activeTool: "pencil" as DrawingTool,
+    shadeMode: "lighten" as ShadeMode,
     layers: [
       { id: "layer-0", name: "Layer 1", visible: true, data: initGrid(16) },
     ] as Layer[],

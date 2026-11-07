@@ -56,7 +56,7 @@ onBeforeUnmount(() => observer?.disconnect());
     <header
       class="col-span-7 flex min-w-0 items-center gap-2 border-b border-zinc-600 bg-[#3a3a3a] px-3"
     >
-      <img src="/logo.png" alt="OpenPack Studio" class="h-6 w-6 shrink-0 [image-rendering:pixelated]" />
+      <img :src="'./logo.png'" alt="OpenPack Studio" class="h-6 w-6 shrink-0 [image-rendering:pixelated]" />
       <slot name="header">
         <span class="truncate text-sm">Resource pack project name</span>
       </slot>

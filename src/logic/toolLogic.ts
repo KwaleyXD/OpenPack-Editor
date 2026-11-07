@@ -1,7 +1,8 @@
 import type { PixelColor } from "../engine/canvasEngine";
 
 export type DrawingTool = "pencil" | "eraser" | "bucket" | "eyedropper" |
-  "line" | "rectangle" | "circle" | "dither" | "fill-all";
+  "line" | "rectangle" | "circle" | "dither" | "fill-all" | "shade";
+export type ShadeMode = "lighten" | "darken";
 
 export interface SymmetryOptions {
   /** Mirror left/right across the canvas's vertical center axis. */
@@ -63,6 +64,37 @@ export function applyDitherPen(
   assertCoordinates(layerData, x, y);
   if ((x + y) % 2 === 0) {
     applyPencil(layerData, x, y, color, symmetry);
+  }
+}
+
+export function shadeColor(color: string, mode: ShadeMode, amount = 0.2): string {
+  if (!/^#(?:[\da-f]{3}|[\da-f]{4}|[\da-f]{6}|[\da-f]{8})$/i.test(color) ||
+    (mode !== "lighten" && mode !== "darken") ||
+    !Number.isFinite(amount) || amount < 0 || amount > 1) {
+    throw new RangeError("Invalid color shading parameters.");
+  }
+  const hex = color.slice(1);
+  const channels = hex.length <= 4
+    ? [...hex].map((digit) => parseInt(digit + digit, 16))
+    : hex.match(/../g)!.map((channel) => parseInt(channel, 16));
+  const alpha = channels.length === 4 ? channels.pop() : undefined;
+  const adjusted = channels.map((channel) => Math.round(mode === "lighten"
+    ? channel + (255 - channel) * amount
+    : channel * (1 - amount)));
+  if (alpha !== undefined) adjusted.push(alpha);
+  return `#${adjusted.map((channel) => channel.toString(16).padStart(2, "0")).join("")}`;
+}
+
+export function applyShade(
+  layerData: PixelColor[][],
+  x: number,
+  y: number,
+  mode: ShadeMode,
+  symmetry: SymmetryOptions = {},
+): void {
+  for (const point of getMirroredCoordinates(layerData, x, y, symmetry)) {
+    const color = layerData[point.y][point.x];
+    if (color !== null) layerData[point.y][point.x] = shadeColor(color, mode);
   }
 }
 
