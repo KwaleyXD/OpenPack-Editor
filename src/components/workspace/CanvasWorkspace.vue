@@ -10,6 +10,9 @@ import { usePackStore } from "../../stores/packState";
 import { createFrameScheduler } from "../../engine/frameScheduler";
 import { getCanvasTransform, zoomAtPoint } from "../../logic/viewportLogic";
 import { frameLayers, getFrameRect, onionFrameSteps, readFrame, writeFrame } from "../../logic/animationLogic";
+import { DEFAULT_TEXTURE_BY_PATH } from "../../logic/assetManifest";
+import { textureSource } from "../../logic/numberedTextureGroups";
+import { parsePngToGrid } from "../../engine/imageLoader";
 import {
   applyFloodFill, applyFillAll, applyPencil, applyEraser, applyDitherPen, applyShade, shadeColor,
   applyLine, applyRectangle, applyCircle, getMirroredCoordinates, pickColor, forEachLinePoint,
@@ -34,6 +37,8 @@ let panDrag: { x: number; y: number; button: number } | null = null;
 let resizeObserver: ResizeObserver | null = null;
 const isDrawing = ref(false);
 const pixelGrid = ref(true);
+const numberedOnionFrames = ref<Layer[][]>([]);
+const onionError = ref("");
 let strokeHasSnapshot = false;
 let strokeMarkedEdited = false;
 let shadedPixels = new Set<string>();
@@ -102,11 +107,43 @@ function redraw() {
   } : engineState.value;
   const animation = packStore.activeAnimation;
   const onionFrames = animation ? onionFrameSteps(packStore.activeFrameIndex, animation.frames.length, packStore.onionSkinRange)
-    .map((step) => frameLayers(toRaw(packStore.layers), getFrameRect(animation, step))) : [];
+    .map((step) => frameLayers(toRaw(packStore.layers), getFrameRect(animation, step))) : numberedOnionFrames.value;
   renderCanvas(canvasContext, state, uiScale, packStore.activeLayerIndex, packStore.onionSkinRange, view.value,
     { showGrid: pixelGrid.value, onionFrames });
 }
 const frame = createFrameScheduler(redraw);
+
+watch(() => [packStore.activeItemId, packStore.onionSkinRange, packStore.categories, packStore.width, packStore.height] as const,
+  async (_values, _previous, onCleanup) => {
+    let cancelled = false;
+    onCleanup(() => { cancelled = true; });
+    numberedOnionFrames.value = [];
+    onionError.value = "";
+    const group = packStore.activeNumberedGroup;
+    if (!group || packStore.onionSkinRange === 0) return;
+    const index = group.frames.findIndex((item) => item.id === packStore.activeItemId);
+    const steps = onionFrameSteps(index, group.frames.length, packStore.onionSkinRange);
+    try {
+      const frames = await Promise.all(steps.map(async (step) => {
+        const item = group.frames[step];
+        if (item.savedLayers) return item.savedLayers;
+        const { url, key } = textureSource(item.filePath);
+        const texture = DEFAULT_TEXTURE_BY_PATH.get(key);
+        const width = texture?.width ?? 16;
+        const height = texture?.height ?? 16;
+        const data = await parsePngToGrid(url, width, height);
+        return [{ id: "layer-0", name: "Vanilla Base", visible: true, data }];
+      }));
+      if (cancelled) return;
+      if (frames.some((layers) => layers[0].data.length !== packStore.frameHeight ||
+        layers[0].data[0].length !== packStore.frameWidth)) {
+        throw new Error("Neighboring frames must have the same dimensions for onion skinning.");
+      }
+      numberedOnionFrames.value = frames;
+    } catch (error) {
+      if (!cancelled) onionError.value = `Unable to show onion skin: ${error instanceof Error ? error.message : String(error)}`;
+    }
+  }, { immediate: true });
 
 function getGridCoordinates(
   event: Pick<MouseEvent, "clientX" | "clientY">,
@@ -513,7 +550,7 @@ watch(() => [
   packStore.renderRevision,
   packStore.activeFrameIndex,
   packStore.activeLayerIndex, packStore.onionSkinRange, pixelGrid.value,
-  packStore.width, packStore.height, canvasWidth.value, canvasHeight.value, view.value,
+  packStore.width, packStore.height, canvasWidth.value, canvasHeight.value, view.value, numberedOnionFrames.value,
 ], () => frame.request(), { flush: "post" });
 </script>
 
@@ -525,6 +562,7 @@ watch(() => [
     @wheel.prevent="wheelZoom"
     @mousedown="startInteraction"
   >
+    <p v-if="onionError" role="alert" class="absolute left-2 top-2 z-10 rounded bg-zinc-900 p-2 text-xs text-red-400">{{ onionError }}</p>
     <div aria-hidden="true" class="alpha-checkerboard pointer-events-none absolute" :style="checkerboardStyle" />
     <canvas
       ref="canvasRef"

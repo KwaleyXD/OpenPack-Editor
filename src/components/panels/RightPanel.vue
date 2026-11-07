@@ -44,6 +44,9 @@ const tools: ReadonlyArray<{ id: DrawingTool; name: string; path: string }> = [
       <PanelResizer v-model="previewHeight" :min="64" :max="480" label="Resize preview height" horizontal />
       <p class="text-[10px] text-zinc-400">{{ store.frameWidth }} x {{ store.frameHeight }} - Click to expand</p>
       <p v-if="store.activeAnimation" class="text-[10px] text-zinc-400">Frame {{ store.activeFrameIndex + 1 }} / {{ store.activeAnimation.frames.length }}</p>
+      <p v-else-if="store.activeNumberedGroup" class="text-[10px] text-zinc-400">
+        Frame {{ store.activeNumberedGroup.frames.findIndex((item) => item.id === store.activeItemId) + 1 }} / {{ store.activeNumberedGroup.frames.length }}
+      </p>
     </section>
     <section aria-label="Drawing tools">
       <h2 class="mb-2 text-xs font-semibold">Tools</h2>

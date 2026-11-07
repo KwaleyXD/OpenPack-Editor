@@ -50,6 +50,19 @@ describe("advanced color management", () => {
     expect(store.recentColors[0]).toBe("#795548");
   });
 
+  it("clears recent colors without changing the active color", async () => {
+    const store = usePackStore();
+    store.setActiveColor("#123456");
+    const wrapper = mount(ColorPickerPanel);
+
+    await wrapper.get('[aria-label="Clear recent colors"]').trigger("click");
+
+    expect(store.recentColors).toEqual([]);
+    expect(store.activeColor).toBe("#123456");
+    expect(wrapper.find('[aria-label="Clear recent colors"]').exists()).toBe(false);
+    expect(wrapper.findAll('[aria-label^="Recent color "]')).toHaveLength(0);
+  });
+
   it("validates hex without changing the color or history on invalid input", async () => {
     const store = usePackStore();
     const wrapper = mount(ColorPickerPanel);
@@ -131,12 +144,45 @@ describe("advanced color management", () => {
     expect(store.customPalettes[0]).toMatchObject({
       name: "My ramp", colors: ["#123456", "#abcdef80"],
     });
-    expect(wrapper.get("select").element.value).toBe(store.customPalettes[0].id);
+    expect(wrapper.get('[aria-label="Select palette My ramp"]').attributes("aria-pressed")).toBe("true");
     store.$dispose();
     setActivePinia(createPinia());
     const restored = usePackStore();
     expect(restored.customPalettes[0].name).toBe("My ramp");
     expect(restored.customPalettes[0].colors).toEqual(["#123456", "#abcdef80"]);
+  });
+
+  it("deletes a custom palette from the list and persisted storage", async () => {
+    const store = usePackStore();
+    store.saveCustomPalette("Keep", ["#123456"]);
+    store.saveCustomPalette("Remove", ["#abcdef"]);
+    const [keep] = store.customPalettes;
+    const wrapper = mount(ColorPickerPanel);
+    await wrapper.get('[aria-label="Delete palette Remove"]').trigger("click");
+
+    expect(store.customPalettes).toEqual([keep]);
+    expect(JSON.parse(localStorage.getItem("openpack_palettes") ?? "[]")).toEqual([keep]);
+    expect(wrapper.find('[aria-label="Delete palette Remove"]').exists()).toBe(false);
+    expect(wrapper.find('[aria-label="Select palette Keep"]').exists()).toBe(true);
+
+    await wrapper.get(`[aria-label="Delete palette ${keep.name}"]`).trigger("click");
+    expect(store.customPalettes).toEqual([]);
+    expect(localStorage.getItem("openpack_palettes")).toBe("[]");
+  });
+
+  it("reports storage errors without removing a custom palette", async () => {
+    const store = usePackStore();
+    store.saveCustomPalette("Ramp", ["#123456"]);
+    const wrapper = mount(ColorPickerPanel);
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
+      throw new DOMException("Storage full", "QuotaExceededError");
+    });
+
+    await wrapper.get('[aria-label="Delete palette Ramp"]').trigger("click");
+
+    expect(store.customPalettes).toHaveLength(1);
+    expect(wrapper.get('[role="alert"]').text()).toContain("Unable to delete custom palette");
+    expect(wrapper.get('[role="alert"]').text()).toContain("Storage full");
   });
 
   it("reports invalid custom palette storage and does not silently overwrite it", () => {

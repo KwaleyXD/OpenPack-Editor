@@ -66,6 +66,11 @@ tools, armor, food, and other specific categories take precedence over this
 material fallback. Trims are separate from armor. Existing local saves are
 regrouped automatically without discarding edited textures.
 
+Use **Search textures** at the top of the asset explorer to filter by filename
+or path (case-insensitive). Matches stay in their original expandable categories;
+categories without matches are hidden. Category progress still counts all its
+textures. **Clear** restores the full list and preserves expanded categories.
+
 Textures with `.png.mcmeta` animation data appear as one expandable asset.
 Click **+** beside the texture to see its frames, then select a frame to edit it.
 The list follows the metadata's playback order (including repeats) and shows
@@ -77,6 +82,14 @@ sheet. Exports contain one sheet plus its animation metadata, preserving frame
 order, timing, interpolation, and other metadata. Resizing uses frame dimensions
 and resizes every physical cell together; exported frame dimensions are updated
 automatically. Frames are selectable for editing, not played automatically.
+
+The numbered clock, compass, and recovery compass item textures also appear as
+expandable frame groups, ordered by their numeric suffix. They remain separate
+textures: selecting a frame edits that PNG, and exports retain the original
+filenames. Onion skin shows neighboring frames, including saved edits. Resizing
+affects only the selected numbered frame; neighboring frames must have matching
+dimensions for onion skinning. Frame switches reset the selected texture's undo
+history, as with other separate textures.
 
 To reimport a supplied template, run:
 

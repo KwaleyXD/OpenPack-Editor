@@ -1,10 +1,35 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
-import { usePackStore } from "../../stores/packState";
+import { usePackStore, type TextureItem } from "../../stores/packState";
 import AssetThumbnail from "./AssetThumbnail.vue";
 import { getTextureAnimation } from "../../logic/assetManifest";
+import { groupNumberedTextures, type NumberedTextureGroup } from "../../logic/numberedTextureGroups";
 
 const packStore = usePackStore();
+const searchQuery = ref("");
+const filteredCategories = computed(() => {
+  const query = searchQuery.value.trim().toLowerCase();
+  return packStore.categories
+    .map((category) => {
+      const groups = groupNumberedTextures(category.items);
+      const byId = new Map(groups.flatMap((group) => group.frames.map((frame) => [frame.id, group] as const)));
+      const seen = new Set<string>();
+      const rows = category.items.flatMap<{ item: TextureItem; group: NumberedTextureGroup<TextureItem> | null }>((item) => {
+        const group = byId.get(item.id);
+        if (group) {
+          if (seen.has(group.name)) return [];
+          seen.add(group.name);
+          if (query && !group.name.includes(query) && !group.frames.some((frame) =>
+            frame.name.toLowerCase().includes(query) || frame.filePath.toLowerCase().includes(query))) return [];
+          return [{ item: group.frames[0], group }];
+        }
+        if (query && !item.name.toLowerCase().includes(query) && !item.filePath.toLowerCase().includes(query)) return [];
+        return [{ item, group: null }];
+      });
+      return { ...category, rows };
+    })
+    .filter((category) => category.rows.length > 0);
+});
 const expandedCategoryIds = ref(new Set<string>());
 const expandedAnimationIds = ref(new Set<string>());
 const animations = computed(() => new Map(packStore.categories.flatMap(({ items }) =>
@@ -46,6 +71,26 @@ async function selectTexture(itemId: string) {
 <template>
   <section class="flex h-full min-h-0 flex-col text-zinc-100">
     <h2 class="sr-only">Texture assets</h2>
+    <div class="flex shrink-0 items-center gap-1 border-b border-zinc-600/80 p-2">
+      <label class="min-w-0 flex-1">
+        <span class="sr-only">Search textures</span>
+        <input
+          v-model="searchQuery"
+          type="search"
+          placeholder="Search textures..."
+          class="w-full rounded border border-zinc-600 bg-zinc-800 px-2 py-1.5 text-xs text-zinc-100 placeholder:text-zinc-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
+        />
+      </label>
+      <button
+        v-if="searchQuery"
+        type="button"
+        aria-label="Clear texture search"
+        class="shrink-0 rounded px-2 py-1.5 text-xs text-zinc-300 hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
+        @click="searchQuery = ''"
+      >
+        Clear
+      </button>
+    </div>
     <p v-if="packStore.pendingItemId" role="status" class="p-2 text-xs text-zinc-400">
       Loading texture...
     </p>
@@ -59,9 +104,16 @@ async function selectTexture(itemId: string) {
     >
       No textures loaded
     </div>
+    <p
+      v-else-if="filteredCategories.length === 0"
+      role="status"
+      class="p-3 text-xs text-zinc-400"
+    >
+      No textures match your search
+    </p>
 
     <div
-      v-for="category in packStore.categories"
+      v-for="category in filteredCategories"
       :key="category.id"
       class="border-b border-zinc-600/80"
     >
@@ -113,31 +165,31 @@ async function selectTexture(itemId: string) {
         v-if="expandedCategoryIds.has(category.id)"
         class="space-y-0.5 p-1"
       >
-        <li v-for="item in category.items" :key="item.id">
+        <li v-for="{ item, group } in category.rows" :key="item.id">
           <div class="flex items-center">
-            <button v-if="animations.get(item.id)" type="button"
-              :aria-label="`Expand frames of ${item.name}`" :aria-expanded="expandedAnimationIds.has(item.id)"
+            <button v-if="group || animations.get(item.id)" type="button"
+              :aria-label="`Expand frames of ${group?.name ?? item.name}`" :aria-expanded="expandedAnimationIds.has(item.id)"
               class="shrink-0 rounded px-1 py-2 text-xs hover:bg-white/10 focus-visible:outline focus-visible:outline-sky-400"
               @click="toggleAnimation(item.id)">{{ expandedAnimationIds.has(item.id) ? '-' : '+' }}</button>
             <button
               type="button"
               class="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-left text-xs transition-colors hover:bg-white/5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
               :class="
-                packStore.activeItemId === item.id
+                (group ? group.frames.some((frame) => frame.id === packStore.activeItemId) : packStore.activeItemId === item.id)
                   ? 'bg-sky-500/20 text-sky-100'
                   : 'text-zinc-300'
               "
               :aria-current="
-                packStore.activeItemId === item.id ? 'true' : undefined
+                (group ? group.frames.some((frame) => frame.id === packStore.activeItemId) : packStore.activeItemId === item.id) ? 'true' : undefined
               "
               :title="item.filePath"
               :aria-busy="packStore.pendingItemId === item.id"
-              @click="selectTexture(item.id)"
+              @click="selectTexture(group?.frames.find((frame) => frame.id === packStore.activeItemId)?.id ?? item.id)"
             >
-              <AssetThumbnail :item="item" />
-              <span class="min-w-0 flex-1 truncate">{{ item.name }}</span>
+              <AssetThumbnail :item="group?.frames.find((frame) => frame.id === packStore.activeItemId) ?? item" />
+              <span class="min-w-0 flex-1 truncate">{{ group?.name ?? item.name }}</span>
               <svg
-                v-if="item.edited"
+                v-if="group ? group.frames.some((frame) => frame.edited) : item.edited"
                 aria-label="Edited"
                 class="h-3.5 w-3.5 shrink-0 text-green-400"
                 viewBox="0 0 16 16"
@@ -153,7 +205,20 @@ async function selectTexture(itemId: string) {
               </svg>
             </button>
           </div>
-          <ol v-if="expandedAnimationIds.has(item.id)" :aria-label="`Frames of ${item.name}`" class="ml-3 border-l border-zinc-600 pl-1">
+          <ol v-if="group && expandedAnimationIds.has(item.id)" :aria-label="`Frames of ${group.name}`" class="ml-3 border-l border-zinc-600 pl-1">
+            <li v-for="(frame, index) in group.frames" :key="frame.id">
+              <button type="button" class="flex w-full items-center gap-2 rounded px-1 py-1 text-left text-xs hover:bg-white/5"
+                :aria-label="`${group.name}: frame ${index + 1}`"
+                :aria-current="packStore.activeItemId === frame.id ? 'true' : undefined"
+                :class="packStore.activeItemId === frame.id ? 'bg-sky-500/20 text-sky-100' : 'text-zinc-300'"
+                :title="frame.filePath" @click="selectTexture(frame.id)">
+                <AssetThumbnail :item="frame" />
+                <span class="min-w-0 truncate">{{ frame.name }}</span>
+                <span v-if="frame.edited" aria-label="Edited" class="ml-auto text-green-400">Edited</span>
+              </button>
+            </li>
+          </ol>
+          <ol v-else-if="expandedAnimationIds.has(item.id)" :aria-label="`Frames of ${item.name}`" class="ml-3 border-l border-zinc-600 pl-1">
             <li v-for="(animationFrame, index) in animations.get(item.id)?.frames" :key="index">
               <button type="button" class="flex w-full items-center gap-2 rounded px-1 py-1 text-left text-xs hover:bg-white/5"
                 :aria-label="`${item.name}: frame ${index + 1}`"

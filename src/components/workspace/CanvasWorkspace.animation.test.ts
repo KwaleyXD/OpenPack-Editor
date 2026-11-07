@@ -1,5 +1,5 @@
 import { createPinia, setActivePinia } from "pinia";
-import { enableAutoUnmount, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import CanvasWorkspace from "./CanvasWorkspace.vue";
@@ -81,6 +81,67 @@ describe("animation frame editing", () => {
     expect(JSON.stringify(store.layers)).toBe(before);
     expect(store.historyStack).toEqual([]);
     wrapper.unmount();
+  });
+
+  it("renders numbered neighboring files and uses their saved edits as onion skins", async () => {
+    const store = usePackStore();
+    vi.mocked(parsePngToGrid).mockImplementation(async (url, width, height = width) => {
+      const color = url.includes("clock_00") ? colors[0] : url.includes("clock_01") ? colors[1] : colors[2];
+      return Array.from({ length: height }, () => Array<PixelColor>(width).fill(color));
+    });
+    store.loadTextures(["item/clock_00.png", "item/clock_01.png", "item/clock_02.png"]);
+    await store.selectItem("item/clock_00.png");
+    store.layers[0].data[0][0] = "#abcdef";
+    store.markItemEdited(store.activeItemId);
+    await store.selectItem("item/clock_01.png");
+    store.onionSkinRange = 2;
+    draws.length = 0;
+    const wrapper = mount(CanvasWorkspace);
+    await flushPromises();
+    expect(draws.some(({ color, alpha }) => color === "#abcdef" && alpha === 0.3)).toBe(true);
+    expect(draws.some(({ color, alpha }) => color === colors[2] && alpha === 0.3)).toBe(true);
+    expect(draws.some(({ color, alpha }) => color === colors[1] && alpha === 1)).toBe(true);
+    expect(store.getEditedItems()).toHaveLength(1);
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false);
+  });
+
+  it("reports failed numbered onion frame loading without changing the active texture", async () => {
+    const store = usePackStore();
+    store.loadTextures(["item/clock_00.png", "item/clock_01.png"]);
+    await store.selectItem("item/clock_00.png");
+    vi.mocked(parsePngToGrid).mockRejectedValueOnce(new Error("Missing frame"));
+    store.onionSkinRange = 3;
+    const wrapper = mount(CanvasWorkspace);
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain("Missing frame");
+    expect(store.activeItemId).toBe("item/clock_00.png");
+  });
+
+  it("reports mismatched numbered frame dimensions", async () => {
+    const store = usePackStore();
+    store.loadTextures(["item/clock_00.png", "item/clock_01.png"]);
+    await store.selectItem("item/clock_00.png");
+    store.resizeCanvasAdvanced(32, 32, "top-left", true);
+    store.onionSkinRange = 3;
+    const wrapper = mount(CanvasWorkspace);
+    await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain("same dimensions");
+  });
+
+  it("discards a stale numbered onion load after switching it off", async () => {
+    const store = usePackStore();
+    store.loadTextures(["item/clock_00.png", "item/clock_01.png"]);
+    await store.selectItem("item/clock_00.png");
+    let resolve!: (pixels: PixelColor[][]) => void;
+    vi.mocked(parsePngToGrid).mockImplementationOnce(() => new Promise((done) => { resolve = done; }));
+    store.onionSkinRange = 3;
+    mount(CanvasWorkspace);
+    store.onionSkinRange = 0;
+    await nextTick();
+    draws.length = 0;
+    resolve(Array.from({ length: 16 }, () => Array<PixelColor>(16).fill("#123456")));
+    await flushPromises();
+    expect(draws.some(({ color, alpha }) => color === "#123456" && alpha === 0.3)).toBe(false);
   });
 
   it("cancels a shape when switching frames without drawing into the next frame", async () => {

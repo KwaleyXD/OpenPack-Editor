@@ -11,6 +11,7 @@ import { parsePngToGrid } from "../engine/imageLoader";
 import { parseProject, serializeProject } from "./projectPersistence";
 import { normalizeHex, parsePalettes, type ColorPalette } from "../logic/colorLogic";
 import { frameLayers, getFrameRect, readFrame, writeFrame, type FrameRect, type TextureAnimation } from "../logic/animationLogic";
+import { groupNumberedTextures } from "../logic/numberedTextureGroups";
 
 const HISTORY_LIMIT = 30;
 const LOCAL_SAVE_KEY = "openpack_save";
@@ -74,6 +75,14 @@ const definePackStore = defineStore("pack", {
   }),
 
   getters: {
+    activeNumberedGroup(state) {
+      for (const category of state.categories) {
+        const group = groupNumberedTextures(category.items)
+          .find(({ frames }) => frames.some(({ id }) => id === state.activeItemId));
+        if (group) return group;
+      }
+      return null;
+    },
     activeAnimation(state): TextureAnimation | null {
       const item = state.categories.flatMap(({ items }) => items).find(({ id }) => id === state.activeItemId);
       return item ? getTextureAnimation(item.filePath, state.width, state.height) : null;
@@ -121,9 +130,12 @@ const definePackStore = defineStore("pack", {
       (state) =>
       (categoryId: string): CategoryProgress => {
         const category = state.categories.find(({ id }) => id === categoryId);
-        const total = category?.items.length ?? 0;
-        const completed =
-          category?.items.filter(({ edited }) => edited).length ?? 0;
+        const items = category?.items ?? [];
+        const groups = groupNumberedTextures(items);
+        const grouped = new Set(groups.flatMap(({ frames }) => frames.map(({ id }) => id)));
+        const total = items.length - grouped.size + groups.length;
+        const completed = items.filter(({ id, edited }) => !grouped.has(id) && edited).length +
+          groups.filter(({ frames }) => frames.some(({ edited }) => edited)).length;
         const color =
           total === 0
             ? "#ef4444"
@@ -160,6 +172,10 @@ const definePackStore = defineStore("pack", {
       this.recentColors = [normalized, ...this.recentColors.filter((entry) => entry !== normalized)].slice(0, 10);
     },
 
+    clearRecentColors() {
+      this.recentColors = [];
+    },
+
     loadCustomPalettes() {
       try {
         const saved = window.localStorage.getItem("openpack_palettes");
@@ -187,6 +203,22 @@ const definePackStore = defineStore("pack", {
         return true;
       } catch (error) {
         this.paletteError = `Unable to save custom palette: ${error instanceof Error ? error.message : String(error)}`;
+        return false;
+      }
+    },
+
+    deleteCustomPalette(id: string): boolean {
+      try {
+        const palettes = this.customPalettes.filter((palette) => palette.id !== id);
+        if (palettes.length === this.customPalettes.length) {
+          throw new Error("The custom palette no longer exists.");
+        }
+        window.localStorage.setItem("openpack_palettes", JSON.stringify(palettes));
+        this.customPalettes = palettes;
+        this.paletteError = "";
+        return true;
+      } catch (error) {
+        this.paletteError = `Unable to delete custom palette: ${error instanceof Error ? error.message : String(error)}`;
         return false;
       }
     },

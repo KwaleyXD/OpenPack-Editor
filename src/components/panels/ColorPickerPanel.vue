@@ -5,12 +5,16 @@ import { PALETTE_PRESETS, hexToRgba } from "../../logic/colorLogic";
 import { rgbaToHex } from "../../engine/imageLoader";
 
 const store = usePackStore();
-const selectedPalette = ref("earth");
+const selectedPreset = ref("earth");
+const selectedCustomPaletteId = ref("");
 const paletteName = ref("");
 const hexInput = ref(store.activeColor);
 const inputError = ref("");
-const palettes = computed(() => [...PALETTE_PRESETS, ...store.customPalettes]);
-const palette = computed(() => palettes.value.find(({ id }) => id === selectedPalette.value) ?? PALETTE_PRESETS[0]);
+const customPalettes = computed(() => store.customPalettes);
+const palette = computed(() =>
+  customPalettes.value.find(({ id }) => id === selectedCustomPaletteId.value) ??
+  PALETTE_PRESETS.find(({ id }) => id === selectedPreset.value) ??
+  PALETTE_PRESETS[0]);
 const channels = computed(() => hexToRgba(store.activeColor));
 const channelFields = [
   { key: "r", label: "Red" }, { key: "g", label: "Green" },
@@ -53,8 +57,14 @@ function setNativeColor(event: Event) {
 function savePalette() {
   const colors = [store.activeColor, ...store.recentColors];
   if (store.saveCustomPalette(paletteName.value, colors)) {
-    selectedPalette.value = store.customPalettes[store.customPalettes.length - 1].id;
+    selectedCustomPaletteId.value = store.customPalettes[store.customPalettes.length - 1].id;
     paletteName.value = "";
+  }
+}
+
+function deletePalette(id: string) {
+  if (store.deleteCustomPalette(id) && selectedCustomPaletteId.value === id) {
+    selectedCustomPaletteId.value = "";
   }
 }
 </script>
@@ -63,11 +73,31 @@ function savePalette() {
   <section aria-label="Color palette" class="space-y-3">
     <h2 class="text-xs font-semibold">Colors</h2>
     <label class="block text-xs">
-      Palette preset
-      <select v-model="selectedPalette" class="mt-1 w-full rounded border border-zinc-600 bg-zinc-800 p-1 text-xs">
-        <option v-for="preset in palettes" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
+      Built-in palette
+      <select
+        v-model="selectedPreset" class="mt-1 w-full rounded border border-zinc-600 bg-zinc-800 p-1 text-xs"
+        @change="selectedCustomPaletteId = ''"
+      >
+        <option v-for="preset in PALETTE_PRESETS" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
       </select>
     </label>
+    <div v-if="customPalettes.length" aria-label="Custom palettes" class="space-y-1">
+      <h3 class="text-xs text-zinc-400">Custom palettes</h3>
+      <div v-for="customPalette in customPalettes" :key="customPalette.id" class="flex items-center gap-1">
+        <button
+          type="button" class="min-w-0 flex-1 truncate rounded border p-1 text-left text-xs hover:bg-zinc-700"
+          :class="selectedCustomPaletteId === customPalette.id ? 'border-sky-400' : 'border-zinc-600'"
+          :aria-pressed="selectedCustomPaletteId === customPalette.id"
+          :aria-label="`Select palette ${customPalette.name}`"
+          @click="selectedCustomPaletteId = customPalette.id"
+        >{{ customPalette.name }}</button>
+        <button
+          type="button" class="rounded px-1 text-xs text-zinc-400 hover:bg-red-900 hover:text-white focus-visible:outline focus-visible:outline-sky-400"
+          :aria-label="`Delete palette ${customPalette.name}`" :title="`Delete ${customPalette.name}`"
+          @click="deletePalette(customPalette.id)"
+        >[x]</button>
+      </div>
+    </div>
     <div class="flex flex-wrap gap-1">
       <button
         v-for="color in palette.colors" :key="color" type="button"
@@ -80,7 +110,15 @@ function savePalette() {
       />
     </div>
     <div aria-label="Recent colors">
-      <h3 class="mb-1 text-xs text-zinc-400">Recent colors</h3>
+      <div class="mb-1 flex items-center justify-between">
+        <h3 class="text-xs text-zinc-400">Recent colors</h3>
+        <button
+          v-if="store.recentColors.length"
+          type="button" aria-label="Clear recent colors" title="Clear recent colors"
+          class="rounded px-1 text-xs leading-none text-zinc-400 hover:bg-zinc-700 hover:text-white focus-visible:outline focus-visible:outline-sky-400"
+          @click="store.clearRecentColors()"
+        >x</button>
+      </div>
       <div class="flex flex-wrap gap-1">
         <button
           v-for="color in store.recentColors" :key="color" type="button"

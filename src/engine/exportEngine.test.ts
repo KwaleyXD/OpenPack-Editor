@@ -248,6 +248,25 @@ describe("PNG and ZIP export", () => {
     expect(context.globalAlpha).toBe(1);
   });
 
+  it("exports edited numbered frames as separate original PNG paths without onion skins", async () => {
+    const store = usePackStore(createPinia());
+    store.loadTextures(["item/clock_00.png", "item/clock_01.png", "item/clock_02.png"]);
+    await store.selectItem("item/clock_00.png");
+    store.layers[0].data[0][0] = "#ff0000";
+    store.markItemEdited(store.activeItemId);
+    await store.selectItem("item/clock_01.png");
+    store.layers[0].data[1][1] = "#00ff00";
+    store.markItemEdited(store.activeItemId);
+    store.onionSkinRange = 2;
+    const zip = await JSZip.loadAsync(await (await buildPackZip("Frames", store.getEditedItems())).arrayBuffer());
+    const files = Object.values(zip.files).filter((entry) => !entry.dir).map(({ name }) => name);
+    expect(files).toEqual(["pack.mcmeta", "assets/minecraft/textures/item/clock_00.png", "assets/minecraft/textures/item/clock_01.png"]);
+    expect(draws).toEqual([
+      { color: "#ff0000", rect: [0, 0, 1, 1] },
+      { color: "#00ff00", rect: [1, 1, 1, 1] },
+    ]);
+  });
+
   it.each(["../entity", "entity/../../evil", "/entity", "entity//creeper", "entity/."])(
     "rejects unsafe export folder %s before starting a download",
     async (categoryPath) => {
