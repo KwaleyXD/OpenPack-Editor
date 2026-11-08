@@ -2,6 +2,11 @@
 
 Desktop and browser Minecraft resource pack editor built with Vue, Pinia, Vite, Electron, and Tailwind CSS.
 
+## Web version
+
+Test and use the editor directly in your browser without any installation:
+[https://openpack-editor.vercel.app/](https://openpack-editor.vercel.app/)
+
 ## Run locally
 
 Use Node.js 22.22.2 or newer in the Node 22 line, or a supported newer Node release.
