@@ -3,7 +3,7 @@ import { effectScope, toRaw, watch } from "vue";
 import { getCategoryId, sortTextures } from "../logic/textureSorter";
 import { DEFAULT_TEXTURE_PATHS, DEFAULT_TEXTURE_BY_PATH, getTextureAnimation } from "../logic/assetManifest";
 import { getTexturePath } from "../logic/texturePaths";
-import { initGrid, type Layer } from "../engine/canvasEngine";
+import { initGrid, type Layer, type PixelColor } from "../engine/canvasEngine";
 import { resizeLayer, type CanvasAnchor } from "../logic/canvasResize";
 import type { EditedTexture } from "../engine/exportEngine";
 import type { DrawingTool, ShadeMode } from "../logic/toolLogic";
@@ -12,6 +12,7 @@ import { parseProject, serializeProject } from "./projectPersistence";
 import { normalizeHex, parsePalettes, type ColorPalette } from "../logic/colorLogic";
 import { frameLayers, getFrameRect, readFrame, writeFrame, type FrameRect, type TextureAnimation } from "../logic/animationLogic";
 import { groupNumberedTextures } from "../logic/numberedTextureGroups";
+import { applySelection, copySelection, type PixelClipboard, type Selection } from "../logic/selectionLogic";
 
 const HISTORY_LIMIT = 30;
 const LOCAL_SAVE_KEY = "openpack_save";
@@ -66,6 +67,10 @@ const definePackStore = defineStore("pack", {
     onionSkinRange: 0,
     renderRevision: 0,
     activeTool: "pencil" as DrawingTool,
+    selection: null as Selection | null,
+    clipboard: null as PixelClipboard | null,
+    pastedBase: null as PixelColor[][] | null,
+    selectionToolError: "",
     shadeMode: "lighten" as ShadeMode,
     layers: [
       { id: "layer-0", name: "Layer 1", visible: true, data: initGrid(16) },
@@ -155,6 +160,96 @@ const definePackStore = defineStore("pack", {
   },
 
   actions: {
+    async resetActiveTexture(itemId: string): Promise<boolean> {
+      if (this.pendingItemId || itemId !== this.activeItemId) {
+        throw new Error("Select the texture to reset and wait for it to finish loading.");
+      }
+      const item = this.categories.flatMap(({ items }) => items).find(({ id }) => id === itemId);
+      if (!item?.edited) throw new Error("The selected texture has no edits to reset.");
+      const { id, categoryPath } = getTexturePath(item.filePath);
+      const texture = DEFAULT_TEXTURE_BY_PATH.get(`${categoryPath}/${id}.png`);
+      if (!texture) throw new Error(`No Minecraft default is available for "${item.name}".`);
+      const originalLayers = JSON.stringify(this.layers);
+      const requestId = ++this.selectionRequestId;
+      this.pendingItemId = itemId;
+      this.selectionError = "";
+      try {
+        const url = `/vanilla_base/${categoryPath}/${id}.png`;
+        const data = texture.width === texture.height
+          ? await parsePngToGrid(url, texture.width)
+          : await parsePngToGrid(url, texture.width, texture.height);
+        if (requestId !== this.selectionRequestId || this.activeItemId !== itemId) return false;
+        if (JSON.stringify(this.layers) !== originalLayers) {
+          throw new Error("The texture changed while its default was loading. Reset was cancelled.");
+        }
+        getTextureAnimation(item.filePath, texture.width, texture.height);
+        this.layers = [{ id: "layer-0", name: "Vanilla Base", visible: true, data }];
+        this.width = texture.width;
+        this.height = texture.height;
+        this.activeLayerIndex = 0;
+        this.activeFrameIndex = 0;
+        this.historyStack = [];
+        this.redoStack = [];
+        this.clearSelection();
+        item.edited = false;
+        delete item.savedLayers;
+        return true;
+      } finally {
+        if (requestId === this.selectionRequestId) this.pendingItemId = "";
+      }
+    },
+
+    clearSelection() {
+      this.selection = null;
+      this.pastedBase = null;
+      this.selectionToolError = "";
+    },
+
+    copySelectedPixels(): boolean {
+      if (!this.selection) {
+        this.selectionToolError = "Select pixels before copying.";
+        return false;
+      }
+      this.clipboard = copySelection(this.frameLayers[this.activeLayerIndex].data, this.selection);
+      this.selectionToolError = "";
+      return true;
+    },
+
+    pasteSelectedPixels(): boolean {
+      if (!this.clipboard) {
+        this.selectionToolError = "Copy a selection before pasting.";
+        return false;
+      }
+      const layer = this.layers[this.activeLayerIndex];
+      if (!layer?.visible || this.pendingItemId) {
+        this.selectionToolError = "Select a visible layer and wait for the texture to finish loading.";
+        return false;
+      }
+      const width = this.clipboard.mask[0].length, height = this.clipboard.mask.length;
+      if (width > this.frameWidth || height > this.frameHeight) {
+        this.selectionToolError = "The copied selection is larger than this frame.";
+        return false;
+      }
+      const clipboard = this.clipboard;
+      const mask = clipboard.mask.map((row, y) => row.map((selected, x) =>
+        selected && clipboard.pixels[y][x] !== null));
+      if (!mask.some((row) => row.some(Boolean))) {
+        this.selectionToolError = "The copied selection contains no visible pixels.";
+        return false;
+      }
+      const original = readFrame(toRaw(layer.data), this.frameRect);
+      const result = applySelection(original, clipboard, 0, 0);
+      this.saveHistorySnapshot();
+      writeFrame(toRaw(layer.data), this.frameRect, result);
+      this.renderRevision += 1;
+      if (this.activeItemId) this.markItemEdited(this.activeItemId);
+      this.pastedBase = original;
+      this.selection = { x: 0, y: 0, mask };
+      this.selectionToolError = "";
+      this.activeTool = "move";
+      return true;
+    },
+
     selectFrame(index: number) {
       if (!this.activeAnimation) throw new Error("The selected texture has no animation frames.");
       getFrameRect(this.activeAnimation, index);

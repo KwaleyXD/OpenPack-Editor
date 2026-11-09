@@ -1,7 +1,8 @@
 import type { PixelColor } from "../engine/canvasEngine";
 
 export type DrawingTool = "pencil" | "eraser" | "bucket" | "eyedropper" |
-  "line" | "rectangle" | "circle" | "dither" | "fill-all" | "shade";
+  "line" | "rectangle" | "circle" | "dither" | "fill-all" | "shade" |
+  "select-rectangle" | "select-magic" | "move";
 export type ShadeMode = "lighten" | "darken";
 
 export interface SymmetryOptions {

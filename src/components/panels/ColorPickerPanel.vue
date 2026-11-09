@@ -7,6 +7,7 @@ import { rgbaToHex } from "../../engine/imageLoader";
 const store = usePackStore();
 const selectedPreset = ref("earth");
 const selectedCustomPaletteId = ref("");
+const customPalettesExpanded = ref(true);
 const paletteName = ref("");
 const hexInput = ref(store.activeColor);
 const inputError = ref("");
@@ -58,6 +59,7 @@ function savePalette() {
   const colors = [store.activeColor, ...store.recentColors];
   if (store.saveCustomPalette(paletteName.value, colors)) {
     selectedCustomPaletteId.value = store.customPalettes[store.customPalettes.length - 1].id;
+    customPalettesExpanded.value = true;
     paletteName.value = "";
   }
 }
@@ -81,21 +83,31 @@ function deletePalette(id: string) {
         <option v-for="preset in PALETTE_PRESETS" :key="preset.id" :value="preset.id">{{ preset.name }}</option>
       </select>
     </label>
-    <div v-if="customPalettes.length" aria-label="Custom palettes" class="space-y-1">
-      <h3 class="text-xs text-zinc-400">Custom palettes</h3>
-      <div v-for="customPalette in customPalettes" :key="customPalette.id" class="flex items-center gap-1">
-        <button
-          type="button" class="min-w-0 flex-1 truncate rounded border p-1 text-left text-xs hover:bg-zinc-700"
-          :class="selectedCustomPaletteId === customPalette.id ? 'border-sky-400' : 'border-zinc-600'"
-          :aria-pressed="selectedCustomPaletteId === customPalette.id"
-          :aria-label="`Select palette ${customPalette.name}`"
-          @click="selectedCustomPaletteId = customPalette.id"
-        >{{ customPalette.name }}</button>
-        <button
-          type="button" class="rounded px-1 text-xs text-zinc-400 hover:bg-red-900 hover:text-white focus-visible:outline focus-visible:outline-sky-400"
-          :aria-label="`Delete palette ${customPalette.name}`" :title="`Delete ${customPalette.name}`"
-          @click="deletePalette(customPalette.id)"
-        >[x]</button>
+    <div v-if="customPalettes.length" class="space-y-1">
+      <button type="button" :aria-expanded="customPalettesExpanded"
+        class="flex w-full items-center gap-2 rounded py-1 text-left text-xs text-zinc-400 hover:bg-white/5 focus-visible:outline focus-visible:outline-sky-400"
+        @click="customPalettesExpanded = !customPalettesExpanded">
+        <svg aria-hidden="true" class="h-3 w-3 shrink-0 transition-transform"
+          :class="{ 'rotate-90': customPalettesExpanded }" viewBox="0 0 16 16" fill="currentColor">
+          <path d="m5 3 5 5-5 5V3Z" />
+        </svg>
+        <span>Custom palettes</span>
+      </button>
+      <div v-if="customPalettesExpanded" aria-label="Custom palettes" class="space-y-1">
+        <div v-for="customPalette in customPalettes" :key="customPalette.id" class="flex items-center gap-1">
+          <button
+            type="button" class="min-w-0 flex-1 truncate rounded border p-1 text-left text-xs hover:bg-zinc-700"
+            :class="selectedCustomPaletteId === customPalette.id ? 'border-sky-400' : 'border-zinc-600'"
+            :aria-pressed="selectedCustomPaletteId === customPalette.id"
+            :aria-label="`Select palette ${customPalette.name}`"
+            @click="selectedCustomPaletteId = customPalette.id"
+          >{{ customPalette.name }}</button>
+          <button
+            type="button" class="rounded px-1 text-xs text-zinc-400 hover:bg-red-900 hover:text-white focus-visible:outline focus-visible:outline-sky-400"
+            :aria-label="`Delete palette ${customPalette.name}`" :title="`Delete ${customPalette.name}`"
+            @click="deletePalette(customPalette.id)"
+          >[x]</button>
+        </div>
       </div>
     </div>
     <div class="flex flex-wrap gap-1">

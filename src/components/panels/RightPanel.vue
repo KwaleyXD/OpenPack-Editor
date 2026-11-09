@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, ref, watch } from "vue";
 import { usePackStore } from "../../stores/packState";
 import type { DrawingTool } from "../../logic/toolLogic";
 import ColorPickerPanel from "./ColorPickerPanel.vue";
@@ -11,8 +11,45 @@ const store = usePackStore();
 const previewExpanded = ref(false);
 const previewHeight = ref(200);
 const layersHeight = ref(160);
+const activeItem = computed(() => store.categories.flatMap(({ items }) => items)
+  .find(({ id }) => id === store.activeItemId));
+const resetItem = ref<{ id: string; name: string; animated: boolean } | null>(null);
+const resetting = ref(false);
+const resetError = ref("");
+
+function openReset() {
+  if (!activeItem.value || !activeItem.value.edited || store.pendingItemId) return;
+  resetItem.value = { id: activeItem.value.id, name: activeItem.value.name, animated: !!store.activeAnimation };
+  resetError.value = "";
+}
+
+function closeReset() {
+  if (!resetting.value) resetItem.value = null;
+}
+
+async function resetTexture() {
+  if (!resetItem.value || resetting.value) return;
+  resetting.value = true;
+  resetError.value = "";
+  try {
+    const success = await store.resetActiveTexture(resetItem.value.id);
+    if (success) resetItem.value = null;
+    else resetError.value = "Reset was cancelled because the selected texture changed.";
+  } catch (error) {
+    resetError.value = error instanceof Error ? error.message : String(error);
+  } finally {
+    resetting.value = false;
+  }
+}
+
+watch(() => store.activeItemId, (id) => {
+  if (resetItem.value && resetItem.value.id !== id && !resetting.value) resetItem.value = null;
+});
 
 const tools: ReadonlyArray<{ id: DrawingTool; name: string; path: string }> = [
+  { id: "select-rectangle", name: "Rectangular selection", path: "M4 4h4 M11 4h3 M17 4h3v3 M20 10v4 M20 17v3h-3 M14 20h-4 M7 20H4v-3 M4 14v-4 M4 7V4" },
+  { id: "select-magic", name: "Magic wand selection", path: "m4 20 11-11 3 3L7 23Z M16 3v3 M21 7h-3 M19 2l-2 2" },
+  { id: "move", name: "Move selection", path: "M12 2v20 M2 12h20 M9 5l3-3 3 3 M9 19l3 3 3-3 M5 9l-3 3 3 3 M19 9l3 3-3 3" },
   { id: "pencil", name: "Pencil", path: "m3 17 1 4 4-1L20 8l-4-4Z M14 6l4 4" },
   { id: "shade", name: "Lighten / Darken", path: "M12 3v3m0 12v3M3 12h3m12 0h3M5.64 5.64l2.12 2.12m8.48 8.48 2.12 2.12m0-12.72-2.12 2.12m-8.48 8.48-2.12 2.12M12 8a4 4 0 1 0 0 8" },
   { id: "eraser", name: "Eraser", path: "m3 14 8-10 9 7-8 10H8Z M7 10l9 7 M12 21h9" },
@@ -47,7 +84,24 @@ const tools: ReadonlyArray<{ id: DrawingTool; name: string; path: string }> = [
       <p v-else-if="store.activeNumberedGroup" class="text-[10px] text-zinc-400">
         Frame {{ store.activeNumberedGroup.frames.findIndex((item) => item.id === store.activeItemId) + 1 }} / {{ store.activeNumberedGroup.frames.length }}
       </p>
+      <button type="button" :disabled="!activeItem?.edited || !!store.pendingItemId"
+        class="w-full rounded border border-zinc-600 p-1 text-xs hover:bg-zinc-700 disabled:opacity-40"
+        @click="openReset">Reset texture to default</button>
     </section>
+    <ModalDialog v-if="resetItem" title="Reset texture to default" @close="closeReset">
+      <div class="space-y-4">
+        <p class="text-sm">Restore {{ resetItem.name }} to its bundled Minecraft default?</p>
+        <p class="text-sm text-amber-300">
+          This discards all edits and layers for this texture, restores its original dimensions, and clears its undo history. This cannot be undone.
+          <span v-if="resetItem.animated"> All frames of this sprite sheet will be reset.</span>
+        </p>
+        <p v-if="resetError" role="alert" class="text-sm text-red-400">{{ resetError }}</p>
+        <footer class="flex justify-end gap-2">
+          <button type="button" :disabled="resetting" class="rounded px-3 py-2 hover:bg-zinc-700 disabled:opacity-50" @click="closeReset">Cancel</button>
+          <button type="button" :disabled="resetting" class="rounded bg-red-800 px-3 py-2 hover:bg-red-700 disabled:opacity-50" @click="resetTexture">{{ resetting ? 'Resetting...' : 'Reset texture' }}</button>
+        </footer>
+      </div>
+    </ModalDialog>
     <section aria-label="Drawing tools">
       <h2 class="mb-2 text-xs font-semibold">Tools</h2>
       <div class="grid grid-cols-2 gap-1">
@@ -67,6 +121,15 @@ const tools: ReadonlyArray<{ id: DrawingTool; name: string; path: string }> = [
           </svg>
         </button>
       </div>
+      <div class="mt-2 grid grid-cols-2 gap-1">
+        <button type="button" :disabled="!store.selection" class="rounded border border-zinc-600 p-1 text-xs hover:bg-zinc-700 disabled:opacity-40" @click="store.copySelectedPixels()">Copy</button>
+        <button type="button" :disabled="!store.clipboard || !!store.pendingItemId" class="rounded border border-zinc-600 p-1 text-xs hover:bg-zinc-700 disabled:opacity-40" @click="store.pasteSelectedPixels()">Paste</button>
+      </div>
+      <button type="button" aria-label="Deselect selection" title="Deselect selection (Ctrl/Cmd+D or Escape)"
+        :disabled="!store.selection"
+        class="mt-1 w-full rounded border border-zinc-500 p-1.5 text-xs hover:bg-zinc-700 focus-visible:outline focus-visible:outline-sky-400 disabled:opacity-40"
+        @click="store.clearSelection()">Deselect selection</button>
+      <p v-if="store.selectionToolError" role="alert" class="mt-1 text-xs text-red-400">{{ store.selectionToolError }}</p>
       <div v-if="store.activeTool === 'shade'" class="mt-2 flex gap-1" aria-label="Shading mode">
         <button
           type="button" aria-label="Lighten pixels" :aria-pressed="store.shadeMode === 'lighten'"

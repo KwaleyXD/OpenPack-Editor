@@ -170,6 +170,35 @@ describe("advanced color management", () => {
     expect(localStorage.getItem("openpack_palettes")).toBe("[]");
   });
 
+  it("collapses and expands custom palettes without changing the selected colors", async () => {
+    const store = usePackStore();
+    store.saveCustomPalette("Ramp", ["#123456"]);
+    const wrapper = mount(ColorPickerPanel);
+    await wrapper.get('[aria-label="Select palette Ramp"]').trigger("click");
+    const toggle = wrapper.get('button[aria-expanded]');
+    expect(toggle.text()).toBe("Custom palettes");
+    expect(toggle.attributes("aria-expanded")).toBe("true");
+    await toggle.trigger("click");
+    expect(toggle.attributes("aria-expanded")).toBe("false");
+    expect(wrapper.find('[aria-label="Select palette Ramp"]').exists()).toBe(false);
+    expect(wrapper.find('[aria-label="Delete palette Ramp"]').exists()).toBe(false);
+    expect(wrapper.find('[aria-label="Select color #123456"]').exists()).toBe(true);
+    await toggle.trigger("click");
+    expect(toggle.attributes("aria-expanded")).toBe("true");
+    expect(wrapper.get('[aria-label="Select palette Ramp"]').attributes("aria-pressed")).toBe("true");
+  });
+
+  it("expands the custom palette list when a palette is saved", async () => {
+    const store = usePackStore();
+    store.saveCustomPalette("Old", ["#123456"]);
+    const wrapper = mount(ColorPickerPanel);
+    await wrapper.get('button[aria-expanded]').trigger("click");
+    await wrapper.get("form input").setValue("New");
+    await wrapper.get("form").trigger("submit");
+    expect(wrapper.get('button[aria-expanded]').attributes("aria-expanded")).toBe("true");
+    expect(wrapper.get('[aria-label="Select palette New"]').attributes("aria-pressed")).toBe("true");
+  });
+
   it("reports storage errors without removing a custom palette", async () => {
     const store = usePackStore();
     store.saveCustomPalette("Ramp", ["#123456"]);

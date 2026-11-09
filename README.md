@@ -96,6 +96,12 @@ affects only the selected numbered frame; neighboring frames must have matching
 dimensions for onion skinning. Frame switches reset the selected texture's undo
 history, as with other separate textures.
 
+To restore an edited texture, select it and choose **Reset texture to default**
+in the right-hand preview panel. Confirming discards its edits and layers,
+restores the original dimensions, removes it from the exported edits, and clears
+its undo history. This cannot be undone. Sprite-sheet animations reset all
+their frames; numbered clock and compass frames are reset individually.
+
 To reimport a supplied template, run:
 
 ```sh
@@ -116,6 +122,24 @@ ZIP exports currently use legacy pack format 34; that is not a guarantee of
 compatibility with Minecraft 26.3. The export engine accepts a format override.
 
 ## Drawing and colors
+
+Use **Rectangular selection** to drag a selection, or **Magic wand selection**
+to select orthogonally connected pixels of the same color (including transparent
+pixels) on the active layer. Use **Copy** / **Paste** or Ctrl/Cmd+C and
+Ctrl/Cmd+V to copy between sprites and animation frames. The clipboard is
+internal to the running editor; it does not exchange images with other apps.
+Paste starts in the top-left corner of the active layer and selects the pasted
+pixels. Choose **Move selection** and drag the selection to reposition it;
+paste automatically selects the Move tool. Transparent copied pixels do not
+overwrite the destination. A selection larger than the destination frame cannot
+be pasted. Moves stay inside the frame.
+
+Each move is undoable; a paste and its repositioning are one undo step until
+you switch tools or deselect. Use **Deselect selection**, Ctrl/Cmd+D, or Escape
+to clear a selection; the selection tools can also replace it directly.
+Escape also cancels an active drag. Selections clear when changing sprites,
+frames, layers, or undoing, while copied pixels remain available until the
+editor closes. The active layer must be visible to paste or move.
 
 The asset explorer shows lazy-loaded texture thumbnails, with live composites
 for active and previously edited textures. Drag the dividers beside the canvas
@@ -194,7 +218,8 @@ Fully opaque colors use a canonical six-digit form in recent-color history.
 To save a custom palette, choose your colors, enter a name, and click
 **Save recent colors as palette**. It saves the active color and recent colors
 under `openpack_palettes` in localStorage, independently of the project save.
-Saved palettes appear in the preset selector; storage errors are shown in the
+Saved palettes appear in the expandable **Custom palettes** list. Collapse the
+list to hide it without changing the selected colors; storage errors are shown in the
 color panel. Clearing site data removes both project saves and custom palettes.
 
 ## Validate and build

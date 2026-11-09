@@ -13,6 +13,7 @@ import { frameLayers, getFrameRect, onionFrameSteps, readFrame, writeFrame } fro
 import { DEFAULT_TEXTURE_BY_PATH } from "../../logic/assetManifest";
 import { textureSource } from "../../logic/numberedTextureGroups";
 import { parsePngToGrid } from "../../engine/imageLoader";
+import { applySelection, copySelection, magicSelection, rectangleSelection, selectionPath, type PixelClipboard, type Selection } from "../../logic/selectionLogic";
 import {
   applyFloodFill, applyFillAll, applyPencil, applyEraser, applyDitherPen, applyShade, shadeColor,
   applyLine, applyRectangle, applyCircle, getMirroredCoordinates, pickColor, forEachLinePoint,
@@ -44,6 +45,27 @@ let strokeMarkedEdited = false;
 let shadedPixels = new Set<string>();
 let previousPixel: { x: number; y: number } | null = null;
 let rightErase = false;
+let selecting: { start: { x: number; y: number } } | null = null;
+let moving: {
+  start: { x: number; y: number };
+  selection: Selection;
+  pixels: PixelClipboard;
+  original: PixelColor[][];
+  preview: PixelColor[][];
+  x: number;
+  y: number;
+  pasted: boolean;
+} | null = null;
+const displayedSelection = computed(() => packStore.selection);
+const selectionStyle = computed(() => {
+  const selection = displayedSelection.value;
+  if (!selection) return undefined;
+  const { x, y, scale } = transform.value;
+  return {
+    left: `${x + selection.x * scale}px`, top: `${y + selection.y * scale}px`,
+    width: `${selection.mask[0].length * scale}px`, height: `${selection.mask.length * scale}px`,
+  };
+});
 let shape: {
   tool: "line" | "rectangle" | "circle";
   layer: Layer;
@@ -100,10 +122,12 @@ function redraw() {
     throw new Error("Canvas 2D context is not initialized.");
   }
 
-  const state = shape ? {
+  const preview = shape?.preview ?? moving?.preview;
+  const previewLayer = shape?.layer.id ?? (moving ? packStore.layers[packStore.activeLayerIndex]?.id : undefined);
+  const state = preview ? {
     ...engineState.value,
-    layers: engineState.value.layers.map((layer) => layer.id === shape?.layer.id
-      ? { ...layer, data: shape.preview } : layer),
+    layers: engineState.value.layers.map((layer) => layer.id === previewLayer
+      ? { ...layer, data: preview } : layer),
   } : engineState.value;
   const animation = packStore.activeAnimation;
   const onionFrames = animation ? onionFrameSteps(packStore.activeFrameIndex, animation.frames.length, packStore.onionSkinRange)
@@ -368,6 +392,23 @@ function updateShape(event: MouseEvent) {
   frame.request();
 }
 
+function updateSelectionDrag(event: MouseEvent) {
+  const point = getGridCoordinates(event);
+  if (!point) return;
+  if (selecting) {
+    packStore.selection = rectangleSelection(selecting.start.x, selecting.start.y, point.x, point.y);
+  } else if (moving) {
+    const width = moving.selection.mask[0].length, height = moving.selection.mask.length;
+    moving.x = Math.max(0, Math.min(packStore.frameWidth - width, moving.selection.x + point.x - moving.start.x));
+    moving.y = Math.max(0, Math.min(packStore.frameHeight - height, moving.selection.y + point.y - moving.start.y));
+    moving.preview = applySelection(moving.original, moving.pixels, moving.x, moving.y,
+      moving.pasted ? undefined : moving.selection);
+    // The preview is not reactive, so request a render and selection overlay update.
+    packStore.selection = { ...moving.selection, x: moving.x, y: moving.y };
+    frame.request();
+  }
+}
+
 function startDrawing(event: MouseEvent) {
   if (event.button !== 0 && event.button !== 2) {
     return;
@@ -376,11 +417,36 @@ function startDrawing(event: MouseEvent) {
   stopDrawing();
   rightErase = event.button === 2;
   if (rightErase) {
+    packStore.pastedBase = null;
     isDrawing.value = true;
     paintStroke(event);
     return;
   }
   const tool = packStore.activeTool;
+  if (tool === "select-rectangle" || tool === "select-magic" || tool === "move") {
+    const point = getGridCoordinates(event);
+    const layer = packStore.layers[packStore.activeLayerIndex];
+    if (!point || !layer?.visible || packStore.pendingItemId) return;
+    const data = readFrame(toRaw(layer.data), packStore.frameRect);
+    if (tool === "select-rectangle") {
+      packStore.pastedBase = null;
+      selecting = { start: point };
+      packStore.selection = rectangleSelection(point.x, point.y, point.x, point.y);
+    } else if (tool === "select-magic") {
+      packStore.pastedBase = null;
+      packStore.selection = magicSelection(data, point.x, point.y);
+    } else {
+      const selection = packStore.selection;
+      if (!selection || !selection.mask[point.y - selection.y]?.[point.x - selection.x]) return;
+      moving = {
+        start: point, selection, pixels: copySelection(data, selection),
+        original: packStore.pastedBase ?? data, preview: data,
+        x: selection.x, y: selection.y, pasted: packStore.pastedBase !== null,
+      };
+    }
+    packStore.selectionToolError = "";
+    return;
+  }
   if (tool === "line" || tool === "rectangle" || tool === "circle") {
     const start = getGridCoordinates(event);
     const layer = packStore.layers[packStore.activeLayerIndex];
@@ -404,6 +470,10 @@ function continueDrawing(event: MouseEvent) {
     stopDrawing();
     return;
   }
+  if (selecting || moving) {
+    updateSelectionDrag(event);
+    return;
+  }
   if (shape) {
     updateShape(event);
     return;
@@ -416,6 +486,18 @@ function continueDrawing(event: MouseEvent) {
 }
 
 function stopDrawing() {
+  selecting = null;
+  if (moving) {
+    const { selection, preview, x, y, pasted } = moving;
+    moving = null;
+    if (x !== selection.x || y !== selection.y) {
+      if (!pasted) packStore.saveHistorySnapshot();
+      writeFrame(toRaw(packStore.layers[packStore.activeLayerIndex].data), packStore.frameRect, preview);
+      packStore.renderRevision += 1;
+      if (packStore.activeItemId) packStore.markItemEdited(packStore.activeItemId);
+    }
+    frame.request();
+  }
   if (shape) {
     const { layer, preview, original } = shape;
     shape = null;
@@ -437,12 +519,16 @@ function stopDrawing() {
 }
 
 function finishDrawing(event: MouseEvent) {
+  if (selecting || moving) updateSelectionDrag(event);
   if (shape) updateShape(event);
   stopDrawing();
 }
 
 function cancelDrawing() {
-  const hadPreview = shape !== null;
+  const hadPreview = shape !== null || moving !== null;
+  if (moving) packStore.selection = moving.selection;
+  selecting = null;
+  moving = null;
   shape = null;
   isDrawing.value = false;
   strokeHasSnapshot = false;
@@ -469,15 +555,33 @@ function handleHistoryShortcut(event: KeyboardEvent) {
     cancelDrawing();
     return;
   }
-  if (event.key === "Escape" && shape) {
+  if (event.key === "Escape" && (shape || selecting || moving || packStore.selection)) {
     event.preventDefault();
     cancelDrawing();
+    packStore.clearSelection();
     return;
   }
   if (!(event.ctrlKey || event.metaKey) || event.altKey) {
     return;
   }
   const key = event.key.toLowerCase();
+  if (!event.shiftKey && key === "d" && packStore.selection) {
+    event.preventDefault();
+    cancelDrawing();
+    packStore.clearSelection();
+    return;
+  }
+  if (!event.shiftKey && key === "c" && packStore.selection) {
+    event.preventDefault();
+    packStore.copySelectedPixels();
+    return;
+  }
+  if (!event.shiftKey && key === "v" && packStore.clipboard) {
+    event.preventDefault();
+    cancelDrawing();
+    packStore.pasteSelectedPixels();
+    return;
+  }
   if (key !== "z" && key !== "y") {
     return;
   }
@@ -539,6 +643,21 @@ watch(() => [
   packStore.layers[packStore.activeLayerIndex]?.visible,
 ], cancelDrawing, { flush: "sync" });
 
+watch(() => [
+  packStore.activeItemId, packStore.activeFrameIndex, packStore.activeLayerIndex,
+  packStore.layers[packStore.activeLayerIndex], packStore.width, packStore.height, packStore.pendingItemId,
+], () => {
+  packStore.selection = null;
+  packStore.pastedBase = null;
+  packStore.selectionToolError = "";
+}, { flush: "sync" });
+watch(() => packStore.activeTool, (tool) => {
+  if (tool !== "move") packStore.pastedBase = null;
+}, { flush: "sync" });
+watch(() => packStore.selection, (selection) => {
+  if (!selection) packStore.pastedBase = null;
+}, { flush: "sync" });
+
 watch(() => [packStore.activeItemId, packStore.categories], () => {
   cancelDrawing();
   stopPan();
@@ -579,6 +698,12 @@ watch(() => [
       @mouseleave="leaveCanvas"
       @contextmenu.prevent
     />
+    <svg v-if="displayedSelection" aria-hidden="true" data-testid="selection-outline"
+      class="pointer-events-none absolute overflow-visible" :style="selectionStyle"
+      :viewBox="`0 0 ${displayedSelection.mask[0].length} ${displayedSelection.mask.length}`" preserveAspectRatio="none">
+      <path :d="selectionPath(displayedSelection)" fill="none" stroke="black" stroke-width="3" vector-effect="non-scaling-stroke" />
+      <path :d="selectionPath(displayedSelection)" fill="none" stroke="white" stroke-width="1.5" stroke-dasharray="4 3" vector-effect="non-scaling-stroke" />
+    </svg>
     <div
       v-if="hoverStyle"
       aria-hidden="true"

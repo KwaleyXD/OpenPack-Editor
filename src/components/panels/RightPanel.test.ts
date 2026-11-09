@@ -1,8 +1,15 @@
 import { createPinia } from "pinia";
-import { enableAutoUnmount, mount } from "@vue/test-utils";
+import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import RightPanel from "./RightPanel.vue";
 import { usePackStore } from "../../stores/packState";
+import { parsePngToGrid } from "../../engine/imageLoader";
+
+vi.mock("../../engine/imageLoader", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../../engine/imageLoader")>();
+  return { ...original, parsePngToGrid: vi.fn(async (_url: string, width: number, height = width) =>
+    Array.from({ length: height }, () => Array<null>(width).fill(null))) };
+});
 
 enableAutoUnmount(afterEach);
 afterAll(() => {
@@ -60,6 +67,54 @@ describe("RightPanel", () => {
     await wrapper.vm.$nextTick();
     expect(context.fillRect).toHaveBeenCalledWith(48, 32, 16, 16);
     expect(context.fillStyle).toBe("#123456");
+  });
+
+  it("confirms before resetting the selected texture, and supports cancellation", async () => {
+    const { store, wrapper } = mountPanel();
+    expect(wrapper.findAll("button").find((button) => button.text() === "Reset texture to default")!.attributes("disabled")).toBeDefined();
+    store.loadTextures(["block/stone.png"]);
+    await store.selectItem("block/stone.png");
+    store.layers[0].data[0][0] = "#abcdef";
+    store.markItemEdited(store.activeItemId);
+    await wrapper.vm.$nextTick();
+    const reset = wrapper.findAll("button").find((button) => button.text() === "Reset texture to default")!;
+    await reset.trigger("click");
+    expect(wrapper.get("dialog").text()).toContain("stone.png");
+    expect(wrapper.get("dialog").text()).toContain("cannot be undone");
+    await wrapper.get("dialog").findAll("button").find((button) => button.text() === "Cancel")!.trigger("click");
+    expect(store.getEditedItems()).toHaveLength(1);
+    await reset.trigger("click");
+    await wrapper.get("dialog").findAll("button").find((button) => button.text() === "Reset texture")!.trigger("click");
+    await flushPromises();
+    expect(wrapper.find("dialog").exists()).toBe(false);
+    expect(store.getEditedItems()).toEqual([]);
+    expect(reset.attributes("disabled")).toBeDefined();
+  });
+
+  it("explains that resetting an animated sprite sheet affects all its frames", async () => {
+    const { store, wrapper } = mountPanel();
+    store.loadTextures(["block/lantern.png"]);
+    await store.selectItem("block/lantern.png");
+    store.markItemEdited(store.activeItemId);
+    await wrapper.vm.$nextTick();
+    await wrapper.findAll("button").find((button) => button.text() === "Reset texture to default")!.trigger("click");
+    expect(wrapper.get("dialog").text()).toContain("All frames of this sprite sheet will be reset.");
+  });
+
+  it("reports reset loading failures and leaves the texture untouched", async () => {
+    const { store, wrapper } = mountPanel();
+    store.loadTextures(["block/stone.png"]);
+    await store.selectItem("block/stone.png");
+    store.layers[0].data[0][0] = "#abcdef";
+    store.markItemEdited(store.activeItemId);
+    await wrapper.vm.$nextTick();
+    await wrapper.findAll("button").find((button) => button.text() === "Reset texture to default")!.trigger("click");
+    vi.mocked(parsePngToGrid).mockRejectedValueOnce(new Error("Missing texture"));
+    await wrapper.get("dialog").findAll("button").find((button) => button.text() === "Reset texture")!.trigger("click");
+    await flushPromises();
+    expect(wrapper.get("dialog").get('[role="alert"]').text()).toContain("Missing texture");
+    expect(store.layers[0].data[0][0]).toBe("#abcdef");
+    expect(store.getEditedItems()).toHaveLength(1);
   });
 
   it("keeps resized textures inside the preview and redraws history and visibility changes", async () => {
