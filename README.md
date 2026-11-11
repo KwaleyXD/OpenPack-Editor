@@ -164,6 +164,11 @@ alpha checkerboard that is not baked into PNG exports.
 The **Grid** button toggles subtle dark pixel outlines without changing texture
 pixels. Outlines disappear below four screen pixels per cell, and never appear
 in previews or exports.
+**Tile** shows a 3×3 repetition of the current frame to check texture seams.
+Use the tile opacity slider to fade the surrounding tiles over the checkerboard:
+100% shows them fully and 0% hides them. Only the center tile is editable.
+Tile mode is a workspace view and does not change previews or exports.
+It fits the repeated view on entry, and restores the previous zoom and pan on exit.
 Fast pencil, eraser, and dither strokes connect successive input positions so
 quick drags do not leave holes. Redraw requests are batched to animation frames;
 pan/zoom updates do not retraverse the reactive layer data.

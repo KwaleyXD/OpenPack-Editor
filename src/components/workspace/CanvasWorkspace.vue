@@ -38,6 +38,9 @@ let panDrag: { x: number; y: number; button: number } | null = null;
 let resizeObserver: ResizeObserver | null = null;
 const isDrawing = ref(false);
 const pixelGrid = ref(true);
+const tileMode = ref(false);
+const tileMaskOpacity = ref(100);
+let viewBeforeTile: { zoomLevel: number; panOffset: { x: number; y: number } } | null = null;
 const numberedOnionFrames = ref<Layer[][]>([]);
 const onionError = ref("");
 let strokeHasSnapshot = false;
@@ -93,13 +96,24 @@ const view = computed(() => ({ zoomLevel: zoomLevel.value, panOffset: panOffset.
 const transform = computed(() => getCanvasTransform(
   packStore.frameWidth, packStore.frameHeight, canvasWidth.value, canvasHeight.value, uiScale, view.value,
 ));
-const checkerboardStyle = computed(() => ({
-  left: `${Math.round(transform.value.x)}px`,
-  top: `${Math.round(transform.value.y)}px`,
-  width: `${Math.round(transform.value.x + packStore.frameWidth * transform.value.scale) - Math.round(transform.value.x)}px`,
-  height: `${Math.round(transform.value.y + packStore.frameHeight * transform.value.scale) - Math.round(transform.value.y)}px`,
-  backgroundSize: `${transform.value.scale}px ${transform.value.scale}px`,
-}));
+const tileStyles = computed(() => {
+  const offsets = tileMode.value ? [-1, 0, 1] : [0];
+  const { x, y, scale } = transform.value;
+  return offsets.flatMap((tileY) => offsets.map((tileX) => {
+    const left = Math.round(x + tileX * packStore.frameWidth * scale);
+    const top = Math.round(y + tileY * packStore.frameHeight * scale);
+    return {
+      key: `${tileX},${tileY}`,
+      center: tileX === 0 && tileY === 0,
+      style: {
+        left: `${left}px`, top: `${top}px`,
+        width: `${Math.round(x + (tileX + 1) * packStore.frameWidth * scale) - left}px`,
+        height: `${Math.round(y + (tileY + 1) * packStore.frameHeight * scale) - top}px`,
+        backgroundSize: `${scale}px ${scale}px`,
+      },
+    };
+  }));
+});
 const hoverStyle = computed(() => {
   if (!hoverPosition.value || isPanning.value || spaceHeld.value) return null;
   const pixel = getGridCoordinates(hoverPosition.value);
@@ -133,7 +147,7 @@ function redraw() {
   const onionFrames = animation ? onionFrameSteps(packStore.activeFrameIndex, animation.frames.length, packStore.onionSkinRange)
     .map((step) => frameLayers(toRaw(packStore.layers), getFrameRect(animation, step))) : numberedOnionFrames.value;
   renderCanvas(canvasContext, state, uiScale, packStore.activeLayerIndex, packStore.onionSkinRange, view.value,
-    { showGrid: pixelGrid.value, onionFrames });
+    { showGrid: pixelGrid.value, onionFrames, tileMode: tileMode.value });
 }
 const frame = createFrameScheduler(redraw);
 
@@ -229,8 +243,28 @@ function wheelZoom(event: WheelEvent) {
 
 function resetView() {
   cancelDrawing();
-  zoomLevel.value = 1;
+  zoomLevel.value = tileMode.value
+    ? Math.min(1, canvasWidth.value / (3 * packStore.frameWidth * uiScale),
+      canvasHeight.value / (3 * packStore.frameHeight * uiScale))
+    : 1;
   panOffset.value = { x: 0, y: 0 };
+}
+
+function toggleTileMode() {
+  cancelDrawing();
+  stopPan();
+  if (!tileMode.value) {
+    viewBeforeTile = { zoomLevel: zoomLevel.value, panOffset: { ...panOffset.value } };
+    tileMode.value = true;
+    resetView();
+  } else {
+    tileMode.value = false;
+    if (viewBeforeTile) {
+      zoomLevel.value = viewBeforeTile.zoomLevel;
+      panOffset.value = viewBeforeTile.panOffset;
+      viewBeforeTile = null;
+    }
+  }
 }
 
 function startInteraction(event: MouseEvent) {
@@ -668,7 +702,7 @@ watch(() => [packStore.activeItemId, packStore.categories], () => {
 watch(() => [
   packStore.renderRevision,
   packStore.activeFrameIndex,
-  packStore.activeLayerIndex, packStore.onionSkinRange, pixelGrid.value,
+  packStore.activeLayerIndex, packStore.onionSkinRange, pixelGrid.value, tileMode.value,
   packStore.width, packStore.height, canvasWidth.value, canvasHeight.value, view.value, numberedOnionFrames.value,
 ], () => frame.request(), { flush: "post" });
 </script>
@@ -682,7 +716,8 @@ watch(() => [
     @mousedown="startInteraction"
   >
     <p v-if="onionError" role="alert" class="absolute left-2 top-2 z-10 rounded bg-zinc-900 p-2 text-xs text-red-400">{{ onionError }}</p>
-    <div aria-hidden="true" class="alpha-checkerboard pointer-events-none absolute" :style="checkerboardStyle" />
+    <div v-for="tile in tileStyles" :key="tile.key" aria-hidden="true"
+      class="alpha-checkerboard pointer-events-none absolute" :style="tile.style" />
     <canvas
       ref="canvasRef"
       :width="canvasWidth"
@@ -698,6 +733,11 @@ watch(() => [
       @mouseleave="leaveCanvas"
       @contextmenu.prevent
     />
+    <template v-if="tileMode">
+      <div v-for="tile in tileStyles.filter((entry) => !entry.center)" :key="tile.key"
+        aria-hidden="true" data-testid="tile-mask" class="alpha-checkerboard pointer-events-none absolute"
+        :style="{ ...tile.style, opacity: (100 - tileMaskOpacity) / 100 }" />
+    </template>
     <svg v-if="displayedSelection" aria-hidden="true" data-testid="selection-outline"
       class="pointer-events-none absolute overflow-visible" :style="selectionStyle"
       :viewBox="`0 0 ${displayedSelection.mask[0].length} ${displayedSelection.mask.length}`" preserveAspectRatio="none">
@@ -713,6 +753,12 @@ watch(() => [
     />
     <div class="absolute bottom-3 right-3 flex max-w-[calc(100%-1.5rem)] flex-wrap items-center justify-end gap-2 rounded border border-zinc-600 bg-zinc-900/90 p-1 text-xs text-zinc-100" @mousedown.stop @wheel.stop>
       <button type="button" aria-label="Pixel grid" :aria-pressed="pixelGrid" class="rounded px-2 py-1 hover:bg-zinc-700" @click="pixelGrid = !pixelGrid">Grid</button>
+      <button type="button" aria-label="Tile mode" :aria-pressed="tileMode" class="rounded px-2 py-1 hover:bg-zinc-700" @click="toggleTileMode">Tile</button>
+      <label v-if="tileMode" class="flex items-center gap-1">
+        <span>Tile opacity {{ tileMaskOpacity }}%</span>
+        <input v-model.number="tileMaskOpacity" type="range" min="0" max="100" step="1"
+          aria-label="Tile mask opacity" :aria-valuetext="`${tileMaskOpacity}%`" class="w-16 accent-sky-400" />
+      </label>
       <button type="button" aria-label="Zoom out" class="rounded px-2 py-1 hover:bg-zinc-700" @click="setZoom(zoomLevel / 1.25)">-</button>
       <output aria-label="Zoom level" class="min-w-12 text-center">{{ zoomReadout }}</output>
       <button type="button" aria-label="Zoom in" class="rounded px-2 py-1 hover:bg-zinc-700" @click="setZoom(zoomLevel * 1.25)">+</button>

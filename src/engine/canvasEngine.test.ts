@@ -8,6 +8,52 @@ import {
 } from "./canvasEngine";
 
 describe("viewport rendering", () => {
+  it("renders a 3 by 3 composite while keeping onion skins and grid in the center", () => {
+    const context = createContextMock();
+    const draws: Array<{ color: string | CanvasGradient | CanvasPattern; alpha: number; x: number; y: number }> = [];
+    vi.mocked(context.fillRect).mockImplementation((x, y) => {
+      draws.push({ color: context.fillStyle, alpha: context.globalAlpha, x, y });
+    });
+    const state: EngineState = {
+      width: 2, height: 1,
+      layers: [
+        { id: "base", name: "Base", visible: true, opacity: 0.4, data: [["#abcdef80", null]] },
+        { id: "hidden", name: "Hidden", visible: false, data: [["#ffffff", null]] },
+      ],
+    };
+    const before = JSON.stringify(state);
+    renderCanvas(context, state, 8, 0, 1, { zoomLevel: 1, panOffset: { x: 0, y: 0 } }, {
+      tileMode: true,
+      onionFrames: [[{ id: "ghost", name: "Ghost", visible: true, data: [["#ff0000", null]] }]],
+    });
+    const tiles = draws.filter(({ color }) => color === "#abcdef80");
+    expect(tiles).toHaveLength(9);
+    expect(tiles.every(({ alpha }) => alpha === 0.4)).toBe(true);
+    expect(tiles.map(({ x, y }) => [x, y])).toEqual([
+      [8, 20], [24, 20], [40, 20], [8, 28], [24, 28], [40, 28], [8, 36], [24, 36], [40, 36],
+    ]);
+    expect(draws.filter(({ color }) => color === "#ff0000")).toEqual([{ color: "#ff0000", alpha: 0.3, x: 24, y: 28 }]);
+    expect(context.strokeRect).toHaveBeenCalledTimes(2);
+    expect(context.clearRect).toHaveBeenCalledOnce();
+    expect(JSON.stringify(state)).toBe(before);
+  });
+
+  it("samples each repeated tile correctly when minified", () => {
+    const context = createContextMock();
+    const state: EngineState = {
+      width: 2, height: 2,
+      layers: [{ id: "base", name: "Base", visible: true, data: [["#000000", "#123456"], ["#abcdef", "#ffffff"]] }],
+    };
+    const draws: Array<{ color: string | CanvasGradient | CanvasPattern; x: number; y: number }> = [];
+    vi.mocked(context.fillRect).mockImplementation((x, y) => draws.push({ color: context.fillStyle, x, y }));
+    renderCanvas(context, state, 0.5, 0, 0, { zoomLevel: 1, panOffset: { x: 0, y: 0 } }, {
+      tileMode: true, showGrid: false,
+    });
+    expect(draws).toHaveLength(9);
+    expect(draws.every(({ color }) => color === "#ffffff")).toBe(true);
+    expect(new Set(draws.map(({ x, y }) => `${x},${y}`)).size).toBe(9);
+  });
+
   it("samples minified textures at destination pixel centers with bounded draw work", () => {
     const context = createContextMock();
     const data = Array.from({ length: 128 }, () => Array(128).fill("#123456"));

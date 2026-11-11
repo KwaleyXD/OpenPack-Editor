@@ -94,6 +94,64 @@ describe("canvas viewport controls", () => {
     expect(store.layers[0].data.flat().every((color) => color === null)).toBe(true);
   });
 
+  it("fits tile mode, masks repeats, edits only the center, and restores the previous view", async () => {
+    const store = usePackStore();
+    const wrapper = mount(CanvasWorkspace);
+    const canvas = wrapper.get("canvas");
+    await wrapper.get('[aria-label="Zoom in"]').trigger("click");
+    expect(wrapper.get('[aria-label="Zoom level"]').text()).toBe("125%");
+    const toggle = wrapper.get('[aria-label="Tile mode"]');
+    await toggle.trigger("click");
+    expect(toggle.attributes("aria-pressed")).toBe("true");
+    expect(wrapper.get('[aria-label="Zoom level"]').text()).toBe("33.3%");
+    expect(wrapper.findAll(".alpha-checkerboard")).toHaveLength(17);
+    expect(wrapper.findAll('[data-testid="tile-mask"]')).toHaveLength(8);
+    expect(wrapper.findAll('[data-testid="tile-mask"]')[0].attributes("style")).toContain("opacity: 0");
+    const slider = wrapper.get<HTMLInputElement>('[aria-label="Tile mask opacity"]');
+    expect(slider.element.value).toBe("100");
+    await slider.setValue("65");
+    expect(slider.attributes("aria-valuetext")).toBe("65%");
+    expect(wrapper.findAll('[data-testid="tile-mask"]')[0].attributes("style")).toContain("opacity: 0.35");
+    await slider.setValue("0");
+    expect(wrapper.findAll('[data-testid="tile-mask"]')[0].attributes("style")).toContain("opacity: 1");
+    await slider.setValue("100");
+    expect(wrapper.findAll('[data-testid="tile-mask"]')[0].attributes("style")).toContain("opacity: 0");
+    expect(store.historyStack).toEqual([]);
+    await canvas.trigger("mousedown", { button: 0, clientX: 20, clientY: 20 });
+    await canvas.trigger("mouseup", { clientX: 20, clientY: 20 });
+    expect(store.historyStack).toEqual([]);
+    await canvas.trigger("mousedown", { button: 0, clientX: 175, clientY: 175 });
+    await canvas.trigger("mouseup", { clientX: 175, clientY: 175 });
+    expect(store.layers[0].data[0][0]).toBe("#ffffff");
+    expect(store.historyStack).toHaveLength(1);
+    await toggle.trigger("click");
+    expect(toggle.attributes("aria-pressed")).toBe("false");
+    expect(wrapper.get('[aria-label="Zoom level"]').text()).toBe("125%");
+    expect(wrapper.findAll(".alpha-checkerboard")).toHaveLength(1);
+    expect(wrapper.find('[aria-label="Tile mask opacity"]').exists()).toBe(false);
+    expect(store.historyStack).toHaveLength(1);
+  });
+
+  it("updates every repeat while drawing on the center tile", async () => {
+    const draws: number[][] = [];
+    const context: Partial<CanvasRenderingContext2D> = {
+      clearRect: vi.fn(() => { draws.length = 0; }),
+      fillRect: vi.fn((...rect: number[]) => { draws.push(rect); }),
+      strokeRect: vi.fn(), save: vi.fn(), restore: vi.fn(),
+    };
+    vi.mocked(HTMLCanvasElement.prototype.getContext).mockImplementation(function (this: HTMLCanvasElement) {
+      Object.defineProperty(context, "canvas", { value: this, configurable: true });
+      return context as CanvasRenderingContext2D;
+    });
+    const wrapper = mount(CanvasWorkspace);
+    await wrapper.get('[aria-label="Tile mode"]').trigger("click");
+    await wrapper.get("canvas").trigger("mousedown", { button: 0, clientX: 175, clientY: 175 });
+    await nextTick();
+    expect(draws).toHaveLength(9);
+    expect(new Set(draws.map(([x, y]) => `${x},${y}`)).size).toBe(9);
+    await wrapper.get("canvas").trigger("mouseup");
+  });
+
   it.each([false, true])("keeps the cursor over the same pixel during wheel/pinch zoom (ctrl: %s)", async (ctrlKey) => {
     const store = usePackStore();
     const wrapper = mount(CanvasWorkspace);
