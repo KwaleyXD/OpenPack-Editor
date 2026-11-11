@@ -56,4 +56,34 @@ describe("edited thumbnails", () => {
     await wrapper.vm.$nextTick();
     expect(context.fillStyle).toBe("#00ff0080");
   });
+
+  it("redraws active and saved layer opacity changes", async () => {
+    const alphas: number[] = [];
+    const context: Partial<CanvasRenderingContext2D> = {
+      clearRect: vi.fn(),
+      fillRect: vi.fn(() => alphas.push(context.globalAlpha!)),
+    };
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(function (this: HTMLCanvasElement) {
+      Object.defineProperty(context, "canvas", { value: this, configurable: true });
+      return context as CanvasRenderingContext2D;
+    });
+    const store = usePackStore();
+    store.loadTextures(["block/stone.png"]);
+    store.activeItemId = "block/stone.png";
+    store.layers[0].data[0][0] = "#abcdef";
+    const item = store.categories[0].items[0];
+    const wrapper = mount(AssetThumbnail, { props: { item } });
+    await wrapper.vm.$nextTick();
+    alphas.length = 0;
+    store.setLayerOpacity(0, 0.35);
+    await wrapper.vm.$nextTick();
+    expect(alphas).toContain(0.35);
+    store.activeItemId = "";
+    item.savedLayers = [{ id: "saved", name: "Saved", visible: true, opacity: 0.7, data: [["#ffffff"]] }];
+    await wrapper.vm.$nextTick();
+    alphas.length = 0;
+    item.savedLayers[0].opacity = 0.2;
+    await wrapper.vm.$nextTick();
+    expect(alphas).toContain(0.2);
+  });
 });

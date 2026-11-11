@@ -83,6 +83,17 @@ describe("animation frame editing", () => {
     wrapper.unmount();
   });
 
+  it("redraws animated frames and onion skins when layer opacity changes", async () => {
+    const store = usePackStore();
+    store.onionSkinRange = 1;
+    mount(CanvasWorkspace);
+    draws.length = 0;
+    store.setLayerOpacity(0, 0.5);
+    await nextTick();
+    expect(draws.some(({ color, alpha }) => color === colors[1] && alpha === 0.5)).toBe(true);
+    expect(draws.some(({ color, alpha }) => color === colors[0] && alpha === 0.15)).toBe(true);
+  });
+
   it("renders numbered neighboring files and uses their saved edits as onion skins", async () => {
     const store = usePackStore();
     vi.mocked(parsePngToGrid).mockImplementation(async (url, width, height = width) => {

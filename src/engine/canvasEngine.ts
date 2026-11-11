@@ -7,6 +7,7 @@ export interface Layer {
   id: string;
   name: string;
   visible: boolean;
+  opacity?: number;
   data: PixelColor[][];
 }
 
@@ -105,7 +106,7 @@ export function renderCanvas(
       continue;
     }
 
-    context.globalAlpha = opacity;
+    context.globalAlpha = opacity * (layer.opacity ?? 1);
     if (minified) {
       // Sample destination pixel centers; tiny thumbnails should not paint every source cell.
       for (let y = sampleTop; y < sampleBottom; y += 1) {

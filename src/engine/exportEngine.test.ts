@@ -144,6 +144,19 @@ describe("PNG and ZIP export", () => {
     expect([canvas.width, canvas.height]).toEqual([16, 16]);
   });
 
+  it("exports each visible layer with its opacity and restores canvas alpha", async () => {
+    const alphas: number[] = [];
+    vi.mocked(context.fillRect).mockImplementation(() => alphas.push(context.globalAlpha));
+    await exportCanvasToBlob([
+      createLayer([["#12345680"]]),
+      { ...createLayer([["#abcdef80"]]), opacity: 0.25 },
+      { ...createLayer([["#ffffff"]]), opacity: 0 },
+      { ...createLayer([["#ffffff"]]), visible: false, opacity: 0.7 },
+    ], 1, 1);
+    expect(alphas).toEqual([1, 0.25, 0]);
+    expect(context.globalAlpha).toBe(1);
+  });
+
   it.each([[0, 16], [16, -1], [1.5, 16], [16, NaN]])(
     "rejects invalid dimensions (%s, %s)",
     async (width, height) => {

@@ -149,6 +149,8 @@ a width from 56 to 240 pixels (limited by available window space). All sidebar
 widths are saved locally. Preview and layer-list
 heights also have draggable dividers. Focus a divider and use arrow keys
 (Shift for larger steps), Home, or End to resize with the keyboard.
+Each layer has an opacity slider beside its visibility control. Opacity is
+saved with the project, can be undone, and applies to previews and PNG exports.
 
 The supplied program logo is used in the header, browser tab, desktop window,
 and Windows executable.

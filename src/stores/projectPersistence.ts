@@ -23,6 +23,8 @@ function isLayer(value: unknown): value is Layer {
   return isRecord(value) &&
     typeof value.id === "string" && typeof value.name === "string" &&
     typeof value.visible === "boolean" &&
+    (value.opacity === undefined || (typeof value.opacity === "number" &&
+      Number.isFinite(value.opacity) && value.opacity >= 0 && value.opacity <= 1)) &&
     Array.isArray(value.data) && value.data.length > 0 &&
     value.data.every((row: unknown) =>
       Array.isArray(row) && row.length > 0 &&

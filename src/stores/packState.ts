@@ -504,6 +504,19 @@ const definePackStore = defineStore("pack", {
       }
     },
 
+    setLayerOpacity(index: number, opacity: number, saveHistory = true) {
+      if (!Number.isInteger(index) || index < 0 || index >= this.layers.length) {
+        throw new RangeError("Layer index is out of bounds.");
+      }
+      if (!Number.isFinite(opacity) || opacity < 0 || opacity > 1) {
+        throw new RangeError("Layer opacity must be between 0 and 1.");
+      }
+      if ((this.layers[index].opacity ?? 1) === opacity) return;
+      if (saveHistory) this.saveHistorySnapshot();
+      this.layers[index].opacity = opacity;
+      if (this.activeItemId) this.markItemEdited(this.activeItemId);
+    },
+
     loadTextures(filePaths: readonly string[]) {
       this.selectionRequestId += 1;
       this.pendingItemId = "";

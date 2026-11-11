@@ -132,6 +132,39 @@ describe("RightPanel", () => {
     expect(context.fillRect).not.toHaveBeenCalled();
   });
 
+  it("updates each layer opacity live and groups a slider gesture into one undo step", async () => {
+    const { store, wrapper } = mountPanel();
+    store.layers[0].data[0][0] = "#abcdef80";
+    store.addLayer();
+    store.layers[1].data[0][0] = "#123456";
+    await wrapper.vm.$nextTick();
+    const alphas: number[] = [];
+    vi.mocked(context.fillRect).mockImplementation(() => alphas.push(context.globalAlpha));
+    const slider = wrapper.get<HTMLInputElement>('input[aria-label="Opacity of Layer 1"]');
+    expect(slider.element.value).toBe("100");
+    const steps = store.historyStack.length;
+    slider.element.value = "70";
+    await slider.trigger("input");
+    slider.element.value = "25";
+    await slider.trigger("input");
+    await slider.trigger("change");
+    await wrapper.vm.$nextTick();
+    expect(store.layers[0].opacity).toBe(0.25);
+    expect(store.layers[1].opacity ?? 1).toBe(1);
+    expect(slider.attributes("aria-valuetext")).toBe("25%");
+    expect(store.historyStack).toHaveLength(steps + 1);
+    expect(alphas).toContain(0.25);
+    store.undo();
+    await wrapper.vm.$nextTick();
+    expect(slider.element.value).toBe("100");
+    store.redo();
+    await wrapper.vm.$nextTick();
+    expect(slider.element.value).toBe("25");
+    store.toggleLayerVisibility(0);
+    await wrapper.vm.$nextTick();
+    expect(slider.element.value).toBe("25");
+  });
+
   it("follows active-layer/onion changes and stops its watcher after unmount", async () => {
     const { store, wrapper } = mountPanel();
     store.layers[0].data[0][0] = "#abcdef";

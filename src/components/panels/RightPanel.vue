@@ -16,6 +16,19 @@ const activeItem = computed(() => store.categories.flatMap(({ items }) => items)
 const resetItem = ref<{ id: string; name: string; animated: boolean } | null>(null);
 const resetting = ref(false);
 const resetError = ref("");
+let opacityEditLayer: string | null = null;
+
+function updateOpacity(index: number, event: Event) {
+  const layer = store.layers[index];
+  const value = Number((event.target as HTMLInputElement).value) / 100;
+  if ((layer.opacity ?? 1) === value) return;
+  store.setLayerOpacity(index, value, opacityEditLayer !== layer.id);
+  opacityEditLayer = layer.id;
+}
+
+function finishOpacityEdit() {
+  opacityEditLayer = null;
+}
 
 function openReset() {
   if (!activeItem.value || !activeItem.value.edited || store.pendingItemId) return;
@@ -176,6 +189,17 @@ const tools: ReadonlyArray<{ id: DrawingTool; name: string; path: string }> = [
               <path v-if="!layer.visible" d="m3 3 18 18" />
             </svg>
           </button>
+          <input
+            type="range" min="0" max="100" step="1"
+            :value="Math.round((layer.opacity ?? 1) * 100)"
+            :aria-label="`Opacity of ${layer.name}`"
+            :aria-valuetext="`${Math.round((layer.opacity ?? 1) * 100)}%`"
+            :title="`Opacity: ${Math.round((layer.opacity ?? 1) * 100)}%`"
+            class="w-16 min-w-0 accent-sky-400"
+            @input="updateOpacity(index, $event)"
+            @change="finishOpacityEdit"
+            @blur="finishOpacityEdit"
+          />
           <button
             type="button"
             :aria-pressed="store.activeLayerIndex === index"

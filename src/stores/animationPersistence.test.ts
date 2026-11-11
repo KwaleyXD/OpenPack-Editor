@@ -73,4 +73,32 @@ describe("animation persistence and category migration", () => {
     store.loadTextures(["block/stone.png"]);
     expect(() => store.selectFrame(0)).toThrow("no animation frames");
   });
+
+  it("restores opacity for active and cached layers, accepts legacy layers, and rejects invalid values", async () => {
+    const store = createStore();
+    store.loadTextures(["block/stone.png", "block/dirt.png"]);
+    await store.selectItem("block/stone.png");
+    store.setLayerOpacity(0, 0.35);
+    await store.selectItem("block/dirt.png");
+    store.setLayerOpacity(0, 0);
+    store.saveProjectLocal();
+    const serialized = localStorage.getItem("openpack_save")!;
+    const restored = createStore();
+    expect(restored.layers[0].opacity).toBe(0);
+    await restored.selectItem("block/stone.png");
+    expect(restored.layers[0].opacity).toBe(0.35);
+
+    const saved = JSON.parse(serialized);
+    const items = saved.categories.flatMap((category: { items: unknown[] }) => category.items);
+    const active = items.find((item: { id: string }) => item.id === "block/dirt.png");
+    const cached = items.find((item: { id: string }) => item.id === "block/stone.png");
+    delete active.savedLayers[0].opacity;
+    delete cached.savedLayers[0].opacity;
+    expect(parseProject(JSON.stringify(saved)).layers[0].opacity ?? 1).toBe(1);
+    active.savedLayers[0].opacity = 1.1;
+    expect(() => parseProject(JSON.stringify(saved))).toThrow();
+    delete active.savedLayers[0].opacity;
+    cached.savedLayers[0].opacity = -0.1;
+    expect(() => parseProject(JSON.stringify(saved))).toThrow();
+  });
 });

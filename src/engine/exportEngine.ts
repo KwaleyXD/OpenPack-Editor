@@ -45,7 +45,7 @@ export function exportCanvasToBlob(
       throw new Error("Unable to initialize the export canvas 2D context.");
     }
 
-    // Export real pixel alpha using source-over, without editor/onion-skin opacity.
+    // Export layer and pixel alpha using source-over, without onion-skin opacity.
     context.globalAlpha = 1;
     context.globalCompositeOperation = "source-over";
     context.imageSmoothingEnabled = false;
@@ -59,6 +59,7 @@ export function exportCanvasToBlob(
         throw new Error(`Layer "${layer.name}" does not match the texture dimensions.`);
       }
 
+      context.globalAlpha = layer.opacity ?? 1;
       for (let y = 0; y < height; y += 1) {
         for (let x = 0; x < width; x += 1) {
           const color = layer.data[y][x];
@@ -73,6 +74,7 @@ export function exportCanvasToBlob(
         }
       }
     }
+    context.globalAlpha = 1;
 
     canvas.toBlob((blob) => {
       if (blob === null) {

@@ -259,6 +259,18 @@ describe("renderCanvas", () => {
     expect(context.globalAlpha).toBe(1);
   });
 
+  it.each([4, 0.5])("applies layer opacity to the canvas and onion frames at scale %s", (scale) => {
+    const context = createContextMock();
+    const alphas: number[] = [];
+    vi.mocked(context.fillRect).mockImplementation(() => alphas.push(context.globalAlpha));
+    const layer = { id: "a", name: "A", visible: true, opacity: 0.5, data: [["#ffffff80"]] };
+    renderCanvas(context, { width: 1, height: 1, layers: [layer] }, scale, 0, 1, undefined, {
+      showGrid: false, onionFrames: [[layer]],
+    });
+    expect(alphas).toEqual([0.5, 0.15]);
+    expect(context.globalAlpha).toBe(1);
+  });
+
   it.each([-1, 4, 1.5, NaN])("rejects invalid onion range %s before drawing", (range) => {
     const context = createContextMock();
     expect(() => renderCanvas(context, createEngineState(), 4, 0, range)).toThrow(RangeError);

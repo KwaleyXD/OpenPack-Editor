@@ -528,7 +528,30 @@ describe("usePackStore", () => {
     expect(() => store.moveLayer(index, 0)).toThrow(RangeError);
     expect(() => store.moveLayer(0, index)).toThrow(RangeError);
     expect(() => store.toggleLayerVisibility(index)).toThrow(RangeError);
+    expect(() => store.setLayerOpacity(index, 0.5)).toThrow(RangeError);
     expect(store.historyStack).toEqual([]);
     expect(store.layers).toHaveLength(1);
+  });
+
+  it.each([-1, 1.01, NaN, Infinity])("rejects invalid layer opacity %s", (opacity) => {
+    const store = usePackStore();
+    expect(() => store.setLayerOpacity(0, opacity)).toThrow(RangeError);
+    expect(store.historyStack).toEqual([]);
+    expect(store.layers[0].opacity).toBeUndefined();
+  });
+
+  it("keeps opacity through undo, redo, texture switching and export", async () => {
+    const store = usePackStore();
+    store.loadTextures(["block/stone.png", "block/dirt.png"]);
+    await store.selectItem("block/stone.png");
+    store.setLayerOpacity(0, 0.4);
+    expect(store.getEditedItems()[0].layers[0].opacity).toBe(0.4);
+    store.undo();
+    expect(store.layers[0].opacity ?? 1).toBe(1);
+    store.redo();
+    expect(store.layers[0].opacity).toBe(0.4);
+    await store.selectItem("block/dirt.png");
+    await store.selectItem("block/stone.png");
+    expect(store.layers[0].opacity).toBe(0.4);
   });
 });
