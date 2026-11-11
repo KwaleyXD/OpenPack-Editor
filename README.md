@@ -21,6 +21,12 @@ using the Ports tab.
 
 ## Desktop app (Windows .exe)
 
+For most users, downloading the portable Windows `.exe` from
+[Releases](https://github.com/KwaleyXD/OpenPack-Editor/releases/latest) is
+recommended. The latest release is **v0.1.4**.
+
+To build or run the desktop app from source:
+
 The desktop app is an Electron wrapper (`electron/main.cjs`) that serves the
 built `dist/` folder from a private `app://openpack` origin.
 
