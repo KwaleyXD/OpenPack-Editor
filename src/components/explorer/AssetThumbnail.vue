@@ -6,14 +6,21 @@ import { renderCanvas } from "../../engine/canvasEngine";
 import { createFrameScheduler } from "../../engine/frameScheduler";
 import { getTextureAnimation } from "../../logic/assetManifest";
 import { frameLayers, getFrameRect } from "../../logic/animationLogic";
+import { getSourceTextureBlob } from "../../stores/sourcePackStorage";
 
 const props = defineProps<{ item: TextureItem; frameIndex?: number }>();
 const store = usePackStore();
 const canvas = ref<HTMLCanvasElement | null>(null);
 const error = ref("");
 const layers = computed(() => props.item.id === store.activeItemId ? store.layers : props.item.savedLayers);
-const animation = computed(() => getTextureAnimation(props.item.filePath,
-  layers.value?.[0]?.data[0]?.length, layers.value?.[0]?.data.length));
+const animation = computed(() => getTextureAnimation(
+  props.item.filePath,
+  layers.value?.[0]?.data[0]?.length,
+  layers.value?.[0]?.data.length,
+  store.importedPackId ? props.item.metadata ?? null : undefined,
+  props.item.sourceWidth,
+  props.item.sourceHeight,
+));
 const selectedFrame = computed(() => props.frameIndex ?? (props.item.id === store.activeItemId ? store.activeFrameIndex : 0));
 const rect = computed(() => animation.value ? getFrameRect(animation.value, selectedFrame.value) : null);
 const imageStyle = computed(() => {
@@ -29,10 +36,28 @@ const imageStyle = computed(() => {
     top: `${(size - rect.value.height * scale) / 2 - rect.value.y * scale}px`,
   };
 });
-const source = computed(() => {
+const source = ref("");
+watch([() => store.importedPackId, () => props.item.filePath], async ([packId], _previous, onCleanup) => {
+  let cancelled = false;
+  let objectUrl = "";
+  error.value = "";
+  onCleanup(() => {
+    cancelled = true;
+    if (objectUrl) URL.revokeObjectURL(objectUrl);
+  });
   const { categoryPath, id } = getTexturePath(props.item.filePath);
-  return `/vanilla_base/${categoryPath}/${id}.png`;
-});
+  source.value = packId ? "" : `/vanilla_base/${categoryPath}/${id}.png`;
+  if (!packId) return;
+  try {
+    const blob = await getSourceTextureBlob(packId, props.item.filePath);
+    if (!cancelled) {
+      objectUrl = URL.createObjectURL(blob);
+      source.value = objectUrl;
+    }
+  } catch (cause) {
+    if (!cancelled) error.value = cause instanceof Error ? cause.message : String(cause);
+  }
+}, { immediate: true });
 const frame = createFrameScheduler(() => {
   if (!canvas.value || !layers.value) return;
   const context = canvas.value.getContext("2d");
@@ -56,15 +81,18 @@ watch([layers, selectedFrame, () => props.item.id === store.activeItemId ? store
 }, { flush: "post" });
 watch(() => props.item.savedLayers, () => frame.request(), { deep: true, flush: "post" });
 watch(canvas, () => { if (canvas.value) frame.request(); }, { flush: "post" });
-onBeforeUnmount(frame.cancel);
+onBeforeUnmount(() => {
+  frame.cancel();
+});
 </script>
 
 <template>
   <span class="alpha-checkerboard relative flex h-7 w-7 shrink-0 items-center justify-center overflow-hidden rounded-sm border border-white/10">
     <span v-if="error" role="img" :aria-label="error" :title="error" class="text-red-400">!</span>
     <canvas v-else-if="layers" ref="canvas" role="img" :aria-label="`Preview of ${item.name}`" class="max-h-full max-w-full" />
-    <img v-else :src="source" :alt="`Preview of ${item.name}`" loading="lazy" decoding="async"
+    <img v-else-if="source" :src="source" :alt="`Preview of ${item.name}`" loading="lazy" decoding="async"
       class="h-full w-full object-contain [image-rendering:pixelated]" :style="imageStyle"
       @error="error = `Unable to load preview: ${item.name}`" />
+    <span v-else class="text-[9px] text-zinc-500">...</span>
   </span>
 </template>

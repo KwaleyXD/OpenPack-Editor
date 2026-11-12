@@ -5,8 +5,10 @@ import PrimarySidebar from "./PrimarySidebar.vue";
 import { usePackStore } from "../../stores/packState";
 import { buildPackZip } from "../../engine/exportEngine";
 import { initGrid } from "../../engine/canvasEngine";
+import { importResourcePack } from "../../logic/packImporter";
 
 vi.mock("../../engine/exportEngine", () => ({ buildPackZip: vi.fn() }));
+vi.mock("../../logic/packImporter", () => ({ importResourcePack: vi.fn() }));
 vi.mock("../../engine/imageLoader", () => ({
   parsePngToGrid: vi.fn(async (_url: string, size: number) => initGrid(size)),
 }));
@@ -27,6 +29,7 @@ describe("PrimarySidebar", () => {
   beforeEach(() => {
     localStorage.clear();
     vi.mocked(buildPackZip).mockReset();
+    vi.mocked(importResourcePack).mockReset().mockResolvedValue();
     Object.defineProperties(HTMLDialogElement.prototype, {
       showModal: { configurable: true, value: function (this: HTMLDialogElement) { this.setAttribute("open", ""); } },
       close: { configurable: true, value: function (this: HTMLDialogElement) { this.removeAttribute("open"); } },
@@ -148,6 +151,31 @@ describe("PrimarySidebar", () => {
     expect(store.categories.length).toBeGreaterThan(0);
     expect(store.layers[0].data[0][0]).toBeNull();
     expect(wrapper.get('[role="status"]').text()).toBe("New pack created.");
+  });
+
+  it("requires confirmation and a ZIP before importing a replacement pack", async () => {
+    const { store, wrapper } = mountSidebar();
+    store.packName = "Keep this";
+    await wrapper.get('button[aria-label="Import pack"]').trigger("click");
+    expect(wrapper.find("dialog").exists()).toBe(true);
+    expect(wrapper.get('button[type="submit"]').attributes("disabled")).toBeDefined();
+    const fileInput = wrapper.get('input[type="file"]').element as HTMLInputElement;
+    Object.defineProperty(fileInput, "files", {
+      configurable: true,
+      value: [new File(["zip"], "pack.zip", { type: "application/zip" })],
+    });
+    await wrapper.get('input[type="file"]').trigger("change");
+    await wrapper.get("form").trigger("submit");
+    expect(wrapper.get('[role="alert"]').text()).toContain("Confirm replacement");
+    expect(importResourcePack).not.toHaveBeenCalled();
+    await wrapper.get('input[type="checkbox"]').setValue(true);
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(importResourcePack).toHaveBeenCalledOnce();
+    expect(importResourcePack).toHaveBeenCalledWith(expect.objectContaining({ name: "pack.zip" }));
+    expect(wrapper.find("dialog").exists()).toBe(false);
+    expect(store.packName).toBe("Keep this");
+    expect(wrapper.get('[role="status"]').text()).toContain("Pack imported");
   });
 
   it("surfaces new-pack storage errors and preserves the existing project when removal fails", async () => {

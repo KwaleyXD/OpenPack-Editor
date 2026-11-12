@@ -33,7 +33,11 @@ const filteredCategories = computed(() => {
 const expandedCategoryIds = ref(new Set<string>());
 const expandedAnimationIds = ref(new Set<string>());
 const animations = computed(() => new Map(packStore.categories.flatMap(({ items }) =>
-  items.map((item) => [item.id, getTextureAnimation(item.filePath)] as const))));
+  items.map((item) => [item.id, getTextureAnimation(
+    item.filePath, undefined, undefined,
+    packStore.importedPackId ? item.metadata ?? null : undefined,
+    item.sourceWidth, item.sourceHeight,
+  )] as const))));
 
 function toggleAnimation(itemId: string) {
   const expanded = new Set(expandedAnimationIds.value);

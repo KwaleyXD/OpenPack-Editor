@@ -13,7 +13,7 @@ const previewHeight = ref(200);
 const layersHeight = ref(160);
 const activeItem = computed(() => store.categories.flatMap(({ items }) => items)
   .find(({ id }) => id === store.activeItemId));
-const resetItem = ref<{ id: string; name: string; animated: boolean } | null>(null);
+const resetItem = ref<{ id: string; name: string; animated: boolean; importedPackId: string | null } | null>(null);
 const resetting = ref(false);
 const resetError = ref("");
 let opacityEditLayer: string | null = null;
@@ -32,7 +32,12 @@ function finishOpacityEdit() {
 
 function openReset() {
   if (!activeItem.value || !activeItem.value.edited || store.pendingItemId) return;
-  resetItem.value = { id: activeItem.value.id, name: activeItem.value.name, animated: !!store.activeAnimation };
+  resetItem.value = {
+    id: activeItem.value.id,
+    name: activeItem.value.name,
+    animated: !!store.activeAnimation,
+    importedPackId: store.importedPackId,
+  };
   resetError.value = "";
 }
 
@@ -55,8 +60,10 @@ async function resetTexture() {
   }
 }
 
-watch(() => store.activeItemId, (id) => {
-  if (resetItem.value && resetItem.value.id !== id && !resetting.value) resetItem.value = null;
+watch([() => store.activeItemId, () => store.importedPackId], ([id, packId]) => {
+  if (resetItem.value &&
+    (resetItem.value.id !== id || resetItem.value.importedPackId !== packId) &&
+    !resetting.value) resetItem.value = null;
 });
 
 const tools: ReadonlyArray<{ id: DrawingTool; name: string; path: string }> = [
@@ -99,11 +106,11 @@ const tools: ReadonlyArray<{ id: DrawingTool; name: string; path: string }> = [
       </p>
       <button type="button" :disabled="!activeItem?.edited || !!store.pendingItemId"
         class="w-full rounded border border-zinc-600 p-1 text-xs hover:bg-zinc-700 disabled:opacity-40"
-        @click="openReset">Reset texture to default</button>
+        @click="openReset">{{ store.importedPackId ? 'Reset texture to imported original' : 'Reset texture to default' }}</button>
     </section>
-    <ModalDialog v-if="resetItem" title="Reset texture to default" @close="closeReset">
+    <ModalDialog v-if="resetItem" :title="resetItem.importedPackId ? 'Reset texture to imported original' : 'Reset texture to default'" @close="closeReset">
       <div class="space-y-4">
-        <p class="text-sm">Restore {{ resetItem.name }} to its bundled Minecraft default?</p>
+        <p class="text-sm">Restore {{ resetItem.name }} to its {{ resetItem.importedPackId ? 'imported original' : 'bundled Minecraft default' }}?</p>
         <p class="text-sm text-amber-300">
           This discards all edits and layers for this texture, restores its original dimensions, and clears its undo history. This cannot be undone.
           <span v-if="resetItem.animated"> All frames of this sprite sheet will be reset.</span>

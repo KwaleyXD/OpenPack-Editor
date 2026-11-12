@@ -14,8 +14,23 @@ export const DEFAULT_TEXTURE_PATHS: readonly string[] = DEFAULT_TEXTURES.map(({ 
 export const DEFAULT_TEXTURE_BY_PATH: ReadonlyMap<string, DefaultTexture> =
   new Map(DEFAULT_TEXTURES.map((texture) => [texture.path, texture]));
 
-export function getTextureAnimation(filePath: string, width?: number, height?: number) {
+export function getTextureAnimation(
+  filePath: string,
+  width?: number,
+  height?: number,
+  metadataOverride?: string | null,
+  sourceWidth?: number,
+  sourceHeight?: number,
+) {
   const { categoryPath, id } = getTexturePath(filePath);
   const texture = DEFAULT_TEXTURE_BY_PATH.get(`${categoryPath}/${id}.png`);
-  return texture ? parseAnimation(texture.metadata, texture.width, texture.height, width, height) : null;
+  const metadata = metadataOverride === undefined ? texture?.metadata : metadataOverride ?? undefined;
+  if (metadata === undefined) return null;
+  return parseAnimation(
+    metadata,
+    sourceWidth ?? texture?.width ?? width ?? 16,
+    sourceHeight ?? texture?.height ?? height ?? 16,
+    width,
+    height,
+  );
 }

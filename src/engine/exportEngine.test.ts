@@ -220,6 +220,29 @@ describe("PNG and ZIP export", () => {
     expect(anchors[0].download).toBe("My_Pack_Test.zip");
   });
 
+  it("preserves imported pack files and metadata while replacing only edited namespaced textures", async () => {
+    const source = new JSZip();
+    source.file("pack.mcmeta", '{"pack":{"pack_format":42,"description":"Original"}}');
+    source.file("assets/modded/textures/block/stone.png", pngBytes);
+    source.file("assets/minecraft/textures/item/apple.png", pngBytes);
+    source.file("assets/modded/models/block/stone.json", '{"model":"kept"}');
+    const sourceBlob = await source.generateAsync({ type: "blob" });
+
+    const result = await buildPackZip("Imported", [
+      createItem({ namespace: "modded", categoryPath: "block", id: "stone" }),
+    ], 42, "Original", sourceBlob);
+    const zip = await JSZip.loadAsync(await result.arrayBuffer());
+
+    expect(await zip.file("pack.mcmeta")!.async("string"))
+      .toBe('{"pack":{"pack_format":42,"description":"Original"}}');
+    expect(await zip.file("assets/minecraft/textures/item/apple.png")!.async("uint8array"))
+      .toEqual(pngBytes);
+    expect(await zip.file("assets/modded/models/block/stone.json")!.async("string"))
+      .toBe('{"model":"kept"}');
+    expect(await zip.file("assets/modded/textures/block/stone.png")!.async("uint8array"))
+      .toEqual(pngBytes);
+  });
+
   it("exports nested entity, GUI, and animated texture paths with exact metadata sidecars", async () => {
     const metadata = '{"animation":{"frametime":2,"interpolate":true}}';
     const blob = await buildPackZip("Pack", [

@@ -4,12 +4,14 @@ import { usePackStore } from "../../stores/packState";
 import { buildPackZip } from "../../engine/exportEngine";
 import ResizeModal from "../modals/ResizeModal.vue";
 import NewPackModal from "../modals/NewPackModal.vue";
+import ImportPackModal from "../modals/ImportPackModal.vue";
+import { getSourcePack } from "../../stores/sourcePackStorage";
 
 const store = usePackStore();
 const isExporting = ref(false);
 const message = ref("");
 const exportError = ref("");
-const modal = ref<"resize" | "new-pack" | null>(null);
+const modal = ref<"resize" | "new-pack" | "import-pack" | null>(null);
 
 function showSettings() {
   message.value = "Project settings are not available yet.";
@@ -21,7 +23,13 @@ async function exportPack() {
   exportError.value = "";
   message.value = "";
   try {
-    await buildPackZip(store.packName, store.getEditedItems(), store.packFormat, store.packDescription);
+    const editedItems = store.getEditedItems();
+    if (store.importedPackId) {
+      const sourceArchive = await getSourcePack(store.importedPackId);
+      await buildPackZip(store.packName, editedItems, store.packFormat, store.packDescription, sourceArchive);
+    } else {
+      await buildPackZip(store.packName, editedItems, store.packFormat, store.packDescription);
+    }
     message.value = "Resource pack download started.";
   } catch (error) {
     exportError.value = error instanceof Error ? error.message : String(error);
@@ -35,6 +43,11 @@ async function exportPack() {
   <nav aria-label="Project actions" class="flex h-full w-full min-w-0 flex-col items-center gap-2 border-r border-zinc-600 bg-[#292929] py-3 text-zinc-100">
     <button type="button" aria-label="Create new pack" title="Create new pack" class="rounded p-3 hover:bg-gray-700 focus-visible:outline focus-visible:outline-sky-400" @click="modal = 'new-pack'">
       <svg aria-hidden="true" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 3h10l6 6v12H4Z M14 3v6h6 M8 15h8m-4-4v8" /></svg>
+    </button>
+    <button type="button" aria-label="Import pack" title="Import pack" class="rounded p-3 hover:bg-gray-700 focus-visible:outline focus-visible:outline-sky-400" @click="modal = 'import-pack'">
+      <svg aria-hidden="true" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M12 16V4m-5 5 5-5 5 5M4 15v5h16v-5" />
+      </svg>
     </button>
     <button type="button" aria-label="Settings" title="Settings" class="rounded p-3 hover:bg-gray-700 focus-visible:outline focus-visible:outline-sky-400" @click="showSettings">
       <svg aria-hidden="true" class="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -56,4 +69,5 @@ async function exportPack() {
   </nav>
   <ResizeModal v-if="modal === 'resize'" @close="modal = null" @resized="message = `Active texture resized to ${store.frameWidth} by ${store.frameHeight}.`" />
   <NewPackModal v-if="modal === 'new-pack'" @close="modal = null" @created="message = 'New pack created.'" />
+  <ImportPackModal v-if="modal === 'import-pack'" @close="modal = null" @imported="message = 'Pack imported. Select a texture to edit it.'" />
 </template>

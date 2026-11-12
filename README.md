@@ -127,6 +127,14 @@ right panel. Cached edited textures can be reopened without their source PNGs.
 ZIP exports currently use legacy pack format 34; that is not a guarantee of
 compatibility with Minecraft 26.3. The export engine accepts a format override.
 
+Choose **Import pack** to replace the current project with a `.zip` resource
+pack. Every PNG under `assets/<namespace>/textures/` is added to the asset
+explorer with its original dimensions and animation metadata. Select textures
+individually to edit them. Export keeps the imported pack's other files and
+metadata, replacing only textures that have been edited. The source ZIP is
+stored in browser/Electron IndexedDB; the project save references that archive,
+so both must remain available in the same browser origin or desktop app.
+
 ## Drawing and colors
 
 Use **Rectangular selection** to drag a selection, or **Magic wand selection**
@@ -186,11 +194,14 @@ The sidebar preview fills the available width while preserving aspect ratio
 (very tall sheets are height-bounded). Click it to open a large, live,
 grid-free preview; Escape or the close button returns to editing.
 
-The left action bar has **Create new pack** and **Resize canvas**:
+The left action bar has **Create new pack**, **Import pack**, and **Resize canvas**:
 
 - New Pack accepts a name and description, loads the complete default asset tree, and
   initializes a fresh 16x16 canvas. Confirmation is required to replace the
   current project and its local save. Custom palettes are kept.
+- Import pack requires a ZIP and confirmation before replacing the current project.
+  It imports every PNG texture across namespaces and preserves the rest of the source
+  archive for export.
 - Resize supports separate width/height, an aspect-ratio lock, and custom
   sizes including 16, 32, and 64. With **Resize content** enabled it scales
   every active-texture layer using nearest neighbors. Otherwise it crops or

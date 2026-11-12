@@ -7,6 +7,7 @@ interface ProjectData {
   packName: string;
   packDescription: string;
   packFormat: number;
+  importedPackId: string | null;
   categories: TextureCategory[];
   activeItemId: string;
   layers: Layer[];
@@ -50,6 +51,11 @@ function isCategory(value: unknown): value is TextureCategory {
     value.items.every((item: unknown) => isRecord(item) &&
       typeof item.id === "string" && typeof item.name === "string" &&
       typeof item.filePath === "string" && typeof item.edited === "boolean" &&
+      (item.sourceWidth === undefined || (typeof item.sourceWidth === "number" &&
+        Number.isSafeInteger(item.sourceWidth) && item.sourceWidth > 0)) &&
+      (item.sourceHeight === undefined || (typeof item.sourceHeight === "number" &&
+        Number.isSafeInteger(item.sourceHeight) && item.sourceHeight > 0)) &&
+      (item.metadata === undefined || typeof item.metadata === "string") &&
       (item.savedLayers === undefined || isLayerStack(item.savedLayers)));
 }
 
@@ -61,6 +67,7 @@ export function serializeProject(project: ProjectData): string {
     packName: project.packName,
     packDescription: project.packDescription,
     packFormat: project.packFormat,
+    importedPackId: project.importedPackId,
     categories: project.categories.map((category) => ({
       ...category,
       items: category.items.map((item) =>
@@ -82,6 +89,7 @@ export function parseProject(serialized: string): ProjectData {
   const value: unknown = JSON.parse(serialized);
   if (!isRecord(value) || value.version !== 1 ||
     typeof value.packName !== "string" || typeof value.packDescription !== "string" ||
+    (value.importedPackId !== undefined && value.importedPackId !== null && typeof value.importedPackId !== "string") ||
     (value.packFormat !== undefined &&
       (typeof value.packFormat !== "number" || !Number.isSafeInteger(value.packFormat) || value.packFormat <= 0)) ||
     typeof value.activeItemId !== "string" ||
@@ -104,11 +112,19 @@ export function parseProject(serialized: string): ProjectData {
     items.some((item) => item.edited && !item.savedLayers)) {
     throw new Error("The local project save contains inconsistent texture or layer data.");
   }
+  if (value.importedPackId && items.some((item) =>
+    typeof item.sourceWidth !== "number" || typeof item.sourceHeight !== "number")) {
+    throw new Error("The local project save is missing imported texture dimensions.");
+  }
   if (activeItem) {
     delete activeItem.savedLayers;
   }
   const activeFrameIndex = typeof value.activeFrameIndex === "number" ? value.activeFrameIndex : 0;
-  const animation = activeItem ? getTextureAnimation(activeItem.filePath, layers[0].data[0].length, layers[0].data.length) : null;
+  const animation = activeItem ? getTextureAnimation(
+    activeItem.filePath, layers[0].data[0].length, layers[0].data.length,
+    value.importedPackId ? activeItem.metadata ?? null : undefined,
+    activeItem.sourceWidth, activeItem.sourceHeight,
+  ) : null;
   if (activeFrameIndex >= (animation?.frames.length ?? 1)) {
     throw new Error("The local project save contains an invalid selected animation frame.");
   }
@@ -120,6 +136,7 @@ export function parseProject(serialized: string): ProjectData {
     packName: value.packName,
     packDescription: value.packDescription,
     packFormat: typeof value.packFormat === "number" ? value.packFormat : 34,
+    importedPackId: typeof value.importedPackId === "string" ? value.importedPackId : null,
     categories: sortedCategories,
     activeItemId: value.activeItemId,
     layers,

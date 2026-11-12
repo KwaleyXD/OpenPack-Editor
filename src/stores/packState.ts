@@ -13,6 +13,7 @@ import { normalizeHex, parsePalettes, type ColorPalette } from "../logic/colorLo
 import { frameLayers, getFrameRect, readFrame, writeFrame, type FrameRect, type TextureAnimation } from "../logic/animationLogic";
 import { groupNumberedTextures } from "../logic/numberedTextureGroups";
 import { applySelection, copySelection, type PixelClipboard, type Selection } from "../logic/selectionLogic";
+import { getSourceTextureBlob } from "./sourcePackStorage";
 
 const HISTORY_LIMIT = 30;
 const LOCAL_SAVE_KEY = "openpack_save";
@@ -23,6 +24,9 @@ export interface TextureItem {
   filePath: string;
   edited: boolean;
   savedLayers?: Layer[];
+  sourceWidth?: number;
+  sourceHeight?: number;
+  metadata?: string;
 }
 
 export interface TextureCategory {
@@ -47,6 +51,7 @@ const definePackStore = defineStore("pack", {
     packName: "My Custom Pack",
     packDescription: "Made in OpenPack Editor",
     packFormat: 34,
+    importedPackId: null as string | null,
     width: 16,
     height: 16,
     categories: [] as TextureCategory[],
@@ -90,7 +95,11 @@ const definePackStore = defineStore("pack", {
     },
     activeAnimation(state): TextureAnimation | null {
       const item = state.categories.flatMap(({ items }) => items).find(({ id }) => id === state.activeItemId);
-      return item ? getTextureAnimation(item.filePath, state.width, state.height) : null;
+      return item ? getTextureAnimation(
+        item.filePath, state.width, state.height,
+        state.importedPackId ? item.metadata ?? null : undefined,
+        item.sourceWidth, item.sourceHeight,
+      ) : null;
     },
     frameRect(state): FrameRect {
       return this.activeAnimation ? getFrameRect(this.activeAnimation, state.activeFrameIndex) :
@@ -114,17 +123,25 @@ const definePackStore = defineStore("pack", {
           const path = getTexturePath(item.filePath);
           const width = layers[0].data[0].length, height = layers[0].data.length;
           const source = DEFAULT_TEXTURE_BY_PATH.get(`${path.categoryPath}/${path.id}.png`);
-          const animation = getTextureAnimation(item.filePath, width, height);
-          let metadata = source?.metadata;
-          if (metadata && animation && (source?.width !== width || source?.height !== height)) {
-            const updated = JSON.parse(metadata);
+          const metadata = state.importedPackId ? item.metadata : source?.metadata;
+          const animation = getTextureAnimation(
+            item.filePath, width, height,
+            state.importedPackId ? item.metadata ?? null : undefined,
+            item.sourceWidth ?? source?.width,
+            item.sourceHeight ?? source?.height,
+          );
+          let exportedMetadata = metadata;
+          if (exportedMetadata && animation &&
+            ((item.sourceWidth ?? source?.width) !== width || (item.sourceHeight ?? source?.height) !== height)) {
+            const updated = JSON.parse(exportedMetadata);
             updated.animation.width = animation.width;
             updated.animation.height = animation.height;
-            metadata = JSON.stringify(updated);
+            exportedMetadata = JSON.stringify(updated);
           }
           return {
             ...path,
-            metadata,
+            namespace: path.namespace ?? "minecraft",
+            metadata: exportedMetadata,
             layers,
             width,
             height,
@@ -166,26 +183,41 @@ const definePackStore = defineStore("pack", {
       }
       const item = this.categories.flatMap(({ items }) => items).find(({ id }) => id === itemId);
       if (!item?.edited) throw new Error("The selected texture has no edits to reset.");
+      const importedPackId = this.importedPackId;
       const { id, categoryPath } = getTexturePath(item.filePath);
       const texture = DEFAULT_TEXTURE_BY_PATH.get(`${categoryPath}/${id}.png`);
-      if (!texture) throw new Error(`No Minecraft default is available for "${item.name}".`);
+      if (!texture && !this.importedPackId) throw new Error(`No Minecraft default is available for "${item.name}".`);
       const originalLayers = JSON.stringify(this.layers);
       const requestId = ++this.selectionRequestId;
       this.pendingItemId = itemId;
       this.selectionError = "";
       try {
-        const url = `/vanilla_base/${categoryPath}/${id}.png`;
-        const data = texture.width === texture.height
-          ? await parsePngToGrid(url, texture.width)
-          : await parsePngToGrid(url, texture.width, texture.height);
+        const width = importedPackId ? item.sourceWidth : texture?.width;
+        const height = importedPackId ? item.sourceHeight : texture?.height;
+        if (!width || !height) throw new Error(`The original texture dimensions for "${item.name}" are unavailable.`);
+        const url = importedPackId
+          ? URL.createObjectURL(await getSourceTextureBlob(importedPackId, item.filePath))
+          : `/vanilla_base/${categoryPath}/${id}.png`;
+        let data;
+        try {
+          data = width === height
+            ? await parsePngToGrid(url, width)
+            : await parsePngToGrid(url, width, height);
+        } finally {
+          if (importedPackId) URL.revokeObjectURL(url);
+        }
         if (requestId !== this.selectionRequestId || this.activeItemId !== itemId) return false;
         if (JSON.stringify(this.layers) !== originalLayers) {
           throw new Error("The texture changed while its default was loading. Reset was cancelled.");
         }
-        getTextureAnimation(item.filePath, texture.width, texture.height);
-        this.layers = [{ id: "layer-0", name: "Vanilla Base", visible: true, data }];
-        this.width = texture.width;
-        this.height = texture.height;
+        getTextureAnimation(
+          item.filePath, width, height,
+          importedPackId ? item.metadata ?? null : undefined,
+          item.sourceWidth, item.sourceHeight,
+        );
+        this.layers = [{ id: "layer-0", name: this.importedPackId ? "Imported original" : "Vanilla Base", visible: true, data }];
+        this.width = width;
+        this.height = height;
         this.activeLayerIndex = 0;
         this.activeFrameIndex = 0;
         this.historyStack = [];
@@ -529,6 +561,7 @@ const definePackStore = defineStore("pack", {
       this.activeFrameIndex = 0;
       this.historyStack = [];
       this.redoStack = [];
+      this.importedPackId = null;
       this.categories = sortTextures(filePaths).map(({ category, files }) => ({
         id: getCategoryId(category),
         name: category,
@@ -544,6 +577,7 @@ const definePackStore = defineStore("pack", {
 
     async selectItem(itemId: string): Promise<void> {
       const requestId = ++this.selectionRequestId;
+      const importedPackId = this.importedPackId;
       this.pendingItemId = "";
       this.selectionError = "";
       if (itemId === this.activeItemId) {
@@ -562,15 +596,32 @@ const definePackStore = defineStore("pack", {
         } else {
           const { id, categoryPath } = getTexturePath(next.filePath);
           const texture = DEFAULT_TEXTURE_BY_PATH.get(`${categoryPath}/${id}.png`);
-          const width = texture?.width ?? 16;
-          const height = texture?.height ?? 16;
-          const url = `/vanilla_base/${categoryPath}/${id}.png`;
-          const data = width === height
-            ? await parsePngToGrid(url, width)
-            : await parsePngToGrid(url, width, height);
-          layers = [{ id: "layer-0", name: "Vanilla Base", visible: true, data }];
+          const width = importedPackId ? next.sourceWidth : texture?.width ?? 16;
+          const height = importedPackId ? next.sourceHeight : texture?.height ?? 16;
+          if (!width || !height) throw new Error(`The original texture dimensions for "${next.name}" are unavailable.`);
+          const url = importedPackId
+            ? URL.createObjectURL(await getSourceTextureBlob(importedPackId, next.filePath))
+            : `/vanilla_base/${categoryPath}/${id}.png`;
+          let data;
+          try {
+            data = width === height
+              ? await parsePngToGrid(url, width)
+              : await parsePngToGrid(url, width, height);
+          } finally {
+            if (importedPackId) URL.revokeObjectURL(url);
+          }
+          layers = [{
+            id: "layer-0",
+            name: importedPackId ? "Imported original" : "Vanilla Base",
+            visible: true,
+            data,
+          }];
         }
-        getTextureAnimation(next.filePath, layers[0].data[0].length, layers[0].data.length);
+        getTextureAnimation(
+          next.filePath, layers[0].data[0].length, layers[0].data.length,
+          importedPackId ? next.metadata ?? null : undefined,
+          next.sourceWidth, next.sourceHeight,
+        );
         // A newer selection or pack reload supersedes this result.
         if (requestId !== this.selectionRequestId) {
           return;

@@ -6,6 +6,7 @@ export interface EditedTexture extends EngineState {
   /** Minecraft filename stem, not the file-path IDs used by the asset store. */
   id: string;
   categoryPath: string;
+  namespace?: string;
   metadata?: string;
 }
 
@@ -91,9 +92,12 @@ export async function buildPackZip(
   editedItems: readonly EditedTexture[],
   packFormat = 34,
   packDescription = packName,
+  sourceArchive?: Blob,
 ): Promise<Blob> {
-  const zip = new JSZip();
-  zip.file("pack.mcmeta", generateMcMeta(packName, packFormat, packDescription));
+  const zip = sourceArchive ? await JSZip.loadAsync(sourceArchive) : new JSZip();
+  if (!sourceArchive || !zip.file("pack.mcmeta")) {
+    zip.file("pack.mcmeta", generateMcMeta(packName, packFormat, packDescription));
+  }
 
   const paths = new Set<string>();
   const entries = editedItems.map((item) => {
@@ -101,9 +105,14 @@ export async function buildPackZip(
       throw new Error("Texture exports require a valid filename stem.");
     }
     const categoryPath = item.categoryPath.replace(/\/$/, "");
-    getTexturePath(`${categoryPath}/${item.id}.png`);
     if (item.metadata !== undefined) JSON.parse(item.metadata);
-    const path = `assets/minecraft/textures/${categoryPath}/${item.id}.png`;
+    const namespace = item.namespace ?? "minecraft";
+    if (!/^[a-z0-9_.-]+$/.test(namespace) || namespace === "." || namespace === "..") {
+      throw new Error("Texture exports require a valid namespace.");
+    }
+    const texturePath = `${categoryPath ? `${categoryPath}/` : ""}${item.id}.png`;
+    getTexturePath(`assets/${namespace}/textures/${texturePath}`);
+    const path = `assets/${namespace}/textures/${texturePath}`;
     if (paths.has(path)) {
       throw new Error(`Duplicate texture export path: ${path}`);
     }
