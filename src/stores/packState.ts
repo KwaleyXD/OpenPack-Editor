@@ -51,6 +51,7 @@ const definePackStore = defineStore("pack", {
     packName: "My Custom Pack",
     packDescription: "Made in OpenPack Editor",
     packFormat: 34,
+    packIconDataUrl: null as string | null,
     importedPackId: null as string | null,
     width: 16,
     height: 16,
@@ -553,6 +554,7 @@ const definePackStore = defineStore("pack", {
       this.selectionRequestId += 1;
       this.pendingItemId = "";
       this.selectionError = "";
+      this.packIconDataUrl = null;
       this.activeItemId = "";
       this.layers = [{ id: "layer-0", name: "Layer 1", visible: true, data: initGrid(16) }];
       this.width = 16;
@@ -707,7 +709,7 @@ export const usePackStore = Object.assign(
       watch(() => store.categories, scheduleSave, { deep: true, flush: "post" });
       watch(
         () => [
-          store.packName, store.packDescription, store.packFormat,
+          store.packName, store.packDescription, store.packFormat, store.packIconDataUrl,
           store.activeItemId, store.activeLayerIndex, store.activeFrameIndex, store.onionSkinRange, store.renderRevision,
         ],
         scheduleSave,

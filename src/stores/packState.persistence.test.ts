@@ -11,6 +11,7 @@ vi.mock("../engine/imageLoader", () => ({
 
 describe("local project persistence", () => {
   let stores: ReturnType<typeof usePackStore>[];
+  const iconDataUrl = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==";
 
   function createStore() {
     const store = usePackStore(createPinia());
@@ -110,6 +111,20 @@ describe("local project persistence", () => {
     expect(restored.getEditedItems()).toHaveLength(2);
   });
 
+  it("persists an applied resource pack icon and accepts older saves without one", () => {
+    const store = createStore();
+    store.packIconDataUrl = iconDataUrl;
+    expect(store.saveProjectLocal()).toBe(true);
+    const restored = createStore();
+    expect(restored.packIconDataUrl).toBe(iconDataUrl);
+
+    const saved = JSON.parse(localStorage.getItem("openpack_save")!);
+    delete saved.packIconDataUrl;
+    localStorage.setItem("openpack_save", JSON.stringify(saved));
+    expect(restored.loadProjectLocal()).toBe(true);
+    expect(restored.packIconDataUrl).toBeNull();
+  });
+
   it("preserves an unedited loaded base without turning it into an edited texture", async () => {
     const store = createStore();
     store.loadTextures(["block/stone.png"]);
@@ -200,7 +215,7 @@ describe("local project persistence", () => {
     },
   );
 
-  it.each(["missing-cache", "invalid-pixels", "ragged-grid", "bad-index", "bad-range", "duplicate-item"])(
+  it.each(["missing-cache", "invalid-pixels", "ragged-grid", "bad-index", "bad-range", "duplicate-item", "invalid-icon"])(
     "rejects inconsistent saved data: %s",
     (kind) => {
       const source = createStore();
@@ -218,6 +233,8 @@ describe("local project persistence", () => {
         saved.activeLayerIndex = 99;
       } else if (kind === "bad-range") {
         saved.onionSkinRange = 4;
+      } else if (kind === "invalid-icon") {
+        saved.packIconDataUrl = "data:image/jpeg;base64,AAAA";
       } else {
         const item = { id: "block/stone.png", name: "stone.png", filePath: "block/stone.png", edited: false };
         saved.categories = [{ id: "stone", name: "Stone", items: [item, item] }];

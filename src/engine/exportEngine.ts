@@ -10,6 +10,21 @@ export interface EditedTexture extends EngineState {
   metadata?: string;
 }
 
+export function packIconDataUrlToBlob(dataUrl: string): Blob {
+  const match = /^data:image\/png;base64,((?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?)$/.exec(dataUrl);
+  if (!match || match[1].length < 4 || dataUrl.length > 100_000) {
+    throw new Error("The resource pack icon must be a PNG image.");
+  }
+  const binary = atob(match[1]);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  const signature = [137, 80, 78, 71, 13, 10, 26, 10];
+  if (bytes.length < 24 || !signature.every((byte, index) => bytes[index] === byte) ||
+    String.fromCharCode(...bytes.slice(12, 16)) !== "IHDR") {
+    throw new Error("The resource pack icon is not a valid PNG.");
+  }
+  return new Blob([bytes], { type: "image/png" });
+}
+
 /** Format 34 is a legacy default; supply the format required by the target game version. */
 export function generateMcMeta(packName: string, packFormat = 34, description = packName): string {
   if (!packName.trim()) {
@@ -93,11 +108,13 @@ export async function buildPackZip(
   packFormat = 34,
   packDescription = packName,
   sourceArchive?: Blob,
+  packIcon?: Blob,
 ): Promise<Blob> {
   const zip = sourceArchive ? await JSZip.loadAsync(sourceArchive) : new JSZip();
   if (!sourceArchive || !zip.file("pack.mcmeta")) {
     zip.file("pack.mcmeta", generateMcMeta(packName, packFormat, packDescription));
   }
+  if (packIcon) zip.file("pack.png", packIcon);
 
   const paths = new Set<string>();
   const entries = editedItems.map((item) => {

@@ -433,8 +433,9 @@ function updateSelectionDrag(event: MouseEvent) {
     packStore.selection = rectangleSelection(selecting.start.x, selecting.start.y, point.x, point.y);
   } else if (moving) {
     const width = moving.selection.mask[0].length, height = moving.selection.mask.length;
-    moving.x = Math.max(0, Math.min(packStore.frameWidth - width, moving.selection.x + point.x - moving.start.x));
-    moving.y = Math.max(0, Math.min(packStore.frameHeight - height, moving.selection.y + point.y - moving.start.y));
+    // The selection may leave the frame but must keep at least one pixel inside it.
+    moving.x = Math.max(1 - width, Math.min(packStore.frameWidth - 1, moving.selection.x + point.x - moving.start.x));
+    moving.y = Math.max(1 - height, Math.min(packStore.frameHeight - 1, moving.selection.y + point.y - moving.start.y));
     moving.preview = applySelection(moving.original, moving.pixels, moving.x, moving.y,
       moving.pasted ? undefined : moving.selection);
     // The preview is not reactive, so request a render and selection overlay update.

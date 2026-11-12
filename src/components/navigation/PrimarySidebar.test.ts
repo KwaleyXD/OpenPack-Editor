@@ -7,7 +7,10 @@ import { buildPackZip } from "../../engine/exportEngine";
 import { initGrid } from "../../engine/canvasEngine";
 import { importResourcePack } from "../../logic/packImporter";
 
-vi.mock("../../engine/exportEngine", () => ({ buildPackZip: vi.fn() }));
+vi.mock("../../engine/exportEngine", () => ({
+  buildPackZip: vi.fn(),
+  packIconDataUrlToBlob: vi.fn((dataUrl: string) => new Blob([dataUrl], { type: "image/png" })),
+}));
 vi.mock("../../logic/packImporter", () => ({ importResourcePack: vi.fn() }));
 vi.mock("../../engine/imageLoader", () => ({
   parsePngToGrid: vi.fn(async (_url: string, size: number) => initGrid(size)),
@@ -72,6 +75,22 @@ describe("PrimarySidebar", () => {
       "Test Pack", store.getEditedItems(), 34, "Test description",
     );
     expect(wrapper.get('[role="status"]').text()).toContain("download started");
+  });
+
+  it("opens the separate icon designer and includes an applied icon in pack export", async () => {
+    const { store, wrapper } = mountSidebar();
+    await wrapper.get('button[aria-label="Design resource pack icon"]').trigger("click");
+    expect(wrapper.find('input[aria-label="Choose icon image"]').exists()).toBe(true);
+    expect(wrapper.find('input[aria-label="Icon brightness"]').exists()).toBe(true);
+    await wrapper.get('button[aria-label="Close dialog"]').trigger("click");
+    store.packIconDataUrl = "data:image/png;base64,AAAA";
+    vi.mocked(buildPackZip).mockResolvedValue(new Blob());
+    await wrapper.get('button[aria-label="Export Pack"]').trigger("click");
+    await flushPromises();
+    expect(buildPackZip).toHaveBeenCalledWith(
+      store.packName, store.getEditedItems(), store.packFormat, store.packDescription,
+      undefined, expect.objectContaining({ type: "image/png" }),
+    );
   });
 
   it("locks proportions, supports custom dimensions and commits anchored crop/pad as one undo step", async () => {

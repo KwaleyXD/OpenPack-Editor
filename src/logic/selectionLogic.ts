@@ -52,7 +52,7 @@ export function copySelection(data: PixelColor[][], selection: Selection): Pixel
   return {
     mask: selection.mask.map((row) => [...row]),
     pixels: selection.mask.map((row, y) => row.map((selected, x) =>
-      selected ? data[selection.y + y][selection.x + x] : null)),
+      selected ? data[selection.y + y]?.[selection.x + x] ?? null : null)),
   };
 }
 
@@ -63,12 +63,13 @@ export function applySelection(
   const result = data.map((row) => [...row]);
   if (source) {
     source.mask.forEach((row, sy) => row.forEach((selected, sx) => {
-      if (selected) result[source.y + sy][source.x + sx] = null;
+      if (selected && result[source.y + sy]?.[source.x + sx] !== undefined) result[source.y + sy][source.x + sx] = null;
     }));
   }
   clipboard.mask.forEach((row, sy) => row.forEach((selected, sx) => {
     const pixel = clipboard.pixels[sy][sx];
-    if (selected && pixel !== null) result[y + sy][x + sx] = pixel;
+    // Pixels moved past the frame edge are clipped.
+    if (selected && pixel !== null && result[y + sy]?.[x + sx] !== undefined) result[y + sy][x + sx] = pixel;
   }));
   return result;
 }

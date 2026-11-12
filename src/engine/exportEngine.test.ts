@@ -9,6 +9,7 @@ import {
   buildPackZip,
   exportCanvasToBlob,
   generateMcMeta,
+  packIconDataUrlToBlob,
   type EditedTexture,
 } from "./exportEngine";
 
@@ -218,6 +219,24 @@ describe("PNG and ZIP export", () => {
   it("allows metadata-only packs and sanitizes download filenames", async () => {
     await buildPackZip("My/Pack:Test", []);
     expect(anchors[0].download).toBe("My_Pack_Test.zip");
+  });
+
+  it("adds a custom icon at the resource pack root and replaces an imported icon", async () => {
+    const source = new JSZip();
+    source.file("pack.png", new Uint8Array([1, 2, 3]));
+    const sourceBlob = await source.generateAsync({ type: "blob" });
+    const icon = new Blob([pngBytes], { type: "image/png" });
+    const result = await buildPackZip("Pack", [], 34, "Pack", sourceBlob, icon);
+    const zip = await JSZip.loadAsync(await result.arrayBuffer());
+    expect(await zip.file("pack.png")!.async("uint8array")).toEqual(pngBytes);
+  });
+
+  it("decodes only PNG data URLs for pack icons", async () => {
+    const icon = packIconDataUrlToBlob(`data:image/png;base64,${btoa(String.fromCharCode(...pngBytes))}`);
+    expect(icon.type).toBe("image/png");
+    expect(new Uint8Array(await icon.arrayBuffer())).toEqual(pngBytes);
+    expect(() => packIconDataUrlToBlob("data:image/jpeg;base64,AAAA")).toThrow("must be a PNG");
+    expect(() => packIconDataUrlToBlob("data:image/png;base64,AAAA")).toThrow("valid PNG");
   });
 
   it("preserves imported pack files and metadata while replacing only edited namespaced textures", async () => {

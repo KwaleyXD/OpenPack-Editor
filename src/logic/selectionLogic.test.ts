@@ -24,4 +24,13 @@ describe("pixel selections", () => {
     expect(data[0]).toEqual(["#111", null, "#333", "#444"]);
     expect(selectionPath({ x: 0, y: 0, mask: [[true, false], [true, true]] })).toContain("M0 0h1");
   });
+
+  it("clips pixels moved past the frame edge", () => {
+    const data = [["#111", "#222", "#333"]];
+    const selection = rectangleSelection(0, 0, 2, 0);
+    const copy = copySelection(data, selection);
+    expect(applySelection(data, copy, 1, 0, selection)).toEqual([[null, "#111", "#222"]]);
+    expect(applySelection(data, copy, -1, 0, selection)).toEqual([["#222", "#333", null]]);
+    expect(copySelection(data, { x: 2, y: 0, mask: [[true, true]] }).pixels).toEqual([["#333", null]]);
+  });
 });

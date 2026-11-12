@@ -7,6 +7,7 @@ interface ProjectData {
   packName: string;
   packDescription: string;
   packFormat: number;
+  packIconDataUrl: string | null;
   importedPackId: string | null;
   categories: TextureCategory[];
   activeItemId: string;
@@ -67,6 +68,7 @@ export function serializeProject(project: ProjectData): string {
     packName: project.packName,
     packDescription: project.packDescription,
     packFormat: project.packFormat,
+    packIconDataUrl: project.packIconDataUrl,
     importedPackId: project.importedPackId,
     categories: project.categories.map((category) => ({
       ...category,
@@ -89,6 +91,10 @@ export function parseProject(serialized: string): ProjectData {
   const value: unknown = JSON.parse(serialized);
   if (!isRecord(value) || value.version !== 1 ||
     typeof value.packName !== "string" || typeof value.packDescription !== "string" ||
+    (value.packIconDataUrl !== undefined && value.packIconDataUrl !== null &&
+      (typeof value.packIconDataUrl !== "string" ||
+        value.packIconDataUrl.length > 100_000 ||
+        !/^data:image\/png;base64,(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(value.packIconDataUrl))) ||
     (value.importedPackId !== undefined && value.importedPackId !== null && typeof value.importedPackId !== "string") ||
     (value.packFormat !== undefined &&
       (typeof value.packFormat !== "number" || !Number.isSafeInteger(value.packFormat) || value.packFormat <= 0)) ||
@@ -136,6 +142,7 @@ export function parseProject(serialized: string): ProjectData {
     packName: value.packName,
     packDescription: value.packDescription,
     packFormat: typeof value.packFormat === "number" ? value.packFormat : 34,
+    packIconDataUrl: typeof value.packIconDataUrl === "string" ? value.packIconDataUrl : null,
     importedPackId: typeof value.importedPackId === "string" ? value.importedPackId : null,
     categories: sortedCategories,
     activeItemId: value.activeItemId,
